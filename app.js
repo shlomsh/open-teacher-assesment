@@ -280,8 +280,8 @@ function renderTopbar() {
   $topbar.innerHTML = `<div class="row">
     <span class="title">Open Teacher Assessment</span>
     <span class="folder-name">📂 ${esc(rootHandle.name)}</span>
-    <button id="refresh">רענון</button>
-    <button id="change">החלפת תיקייה</button>
+    <button id="refresh" class="ghost small">רענון</button>
+    <button id="change" class="ghost small">החלפת תיקייה</button>
   </div>`;
   document.getElementById('refresh').onclick = () => scanAndShow();
   document.getElementById('change').onclick = () => pickFolder();
@@ -323,18 +323,27 @@ function showWelcome(lastName, errMsg) {
 
 function showNav() {
   renderTopbar();
-  const cards = students.map(s => `
+  let commonMeta = '';
+  if (students.length > 0) {
+    const m = students[0].meta;
+    if (m?.code || m?.term) {
+      commonMeta = ` · ${esc(m.code ? 'שאלון ' + m.code : '')} ${esc(m.term || '')}`.trim();
+    }
+  }
+
+  const cards = students.map((s, i) => {
+    return `
     <a class="card" href="#${encodeURIComponent(s.id)}">
-      <div class="label">תלמיד/ה</div>
       <div class="sid">${esc(s.id)}</div>
-      <div class="sub">${esc(s.meta?.code ? 'שאלון ' + s.meta.code : '')} ${esc(s.meta?.term || '')}</div>
-      <div class="go">צפייה בתשובות ←</div>
-    </a>`).join('');
+      <div class="go">צפייה ←</div>
+    </a>`;
+  }).join('');
+  
   $app.innerHTML = `
     <div class="page-head">
       <div class="kicker">תיקיית הבחינות</div>
       <h1 class="page-h">בחינות תלמידים</h1>
-      <p class="lede">${students.length} תלמידים · לחצו על תלמיד כדי לראות את השאלות, התמונות והתשובות.</p>
+      <p class="lede">${students.length} תלמידים${commonMeta} · לחצו על תלמיד לצפייה.</p>
     </div>
     <div class="grid">${cards || '<div class="empty">לא נמצאו תיקיות תלמידים עם <code>standalone_open</code> בתיקייה שנבחרה.</div>'}</div>`;
 }
