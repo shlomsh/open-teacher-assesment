@@ -176,7 +176,11 @@ async function buildModel(student) {
 // ---------- rendering (ported from build.mjs) ----------
 function renderStimulus(s) {
   if (!s) return '';
-  const imgs = [...(s.images || []), ...(s.galleries || []).flatMap(g => g.photos || [])];
+  // Only use gallery photos if there are no main images (to prevent duplicates)
+  let imgs = s.images || [];
+  if (imgs.length === 0) {
+    imgs = (s.galleries || []).flatMap(g => g.photos || []);
+  }
   const tiles = imgs.map(im =>
     `<a class="thumb" href="${im.url}" target="_blank" title="${esc(im.name)}"><img loading="lazy" src="${im.url}" alt=""></a>`).join('');
   const tour = s.virtualTour
