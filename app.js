@@ -291,9 +291,8 @@ function showWelcome(lastName, errMsg) {
   renderTopbar();
   $app.innerHTML = `
     <div class="welcome">
-      <div class="kicker">מערכת צפייה בבחינות הדמייה</div>
-      <h1 dir="ltr">Open Teacher<br><em>Assessment</em></h1>
-      <div class="hero-subtitle">מערכת פשוטה ומאובטחת לצפייה בבחינות תלמידים ובדיקתן באופן מקומי.</div>
+      <h1 dir="ltr">Open Teacher <em>Assessment</em></h1>
+      <div class="hero-subtitle">מערכת פשוטה ומאובטחת לצפייה בבחינות הדמייה ובדיקתן באופן מקומי.</div>
       
       <div class="cta-group">
         ${lastName ? `<button class="primary big" id="resume">פתיחת התיקייה האחרונה · ${esc(lastName)}</button><button class="ghost" id="pick">בחירת תיקייה אחרת</button>`
