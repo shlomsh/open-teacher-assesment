@@ -1,3 +1,6 @@
+# mockups
+mockup-*.html
+
 # dependencies / tooling
 node_modules/
 .vercel/

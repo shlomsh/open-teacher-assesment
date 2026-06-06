@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "security-audit": {
+      "source": "ansteorra/kmp",
+      "sourceType": "github",
+      "skillPath": ".github/skills/security_audit/SKILL.md",
+      "computedHash": "d08440d253fb596ae67fb4bf118b10463e7dba1cd60486befbd7de3b62d10962"
+    }
+  }
+}

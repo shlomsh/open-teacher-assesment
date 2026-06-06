@@ -192,7 +192,7 @@ function extractQuestions(doc) {
     const items = [];
     page.querySelectorAll('[id^="ans_"]').forEach(div => {
       const a = txt(div); if (!a) return;
-      items.push({ ...parseItemId(div.id), type: 'inplace', answerHtml: div.innerHTML.trim(), answerText: a });
+      items.push({ ...parseItemId(div.id), type: 'inplace', answerHtml: DOMPurify.sanitize(div.innerHTML.trim()), answerText: a });
     });
     page.querySelectorAll('select').forEach(sel => {
       const s = txt(sel.querySelector('option[selected]')); if (!s) return;
@@ -202,10 +202,10 @@ function extractQuestions(doc) {
 
     const clone = page.cloneNode(true);
     clone.querySelectorAll('[id^="ans_"], .textarea, .BtnDiv, [type="RecordAnswer"], iframe, script, style, .asset_resize_link, .modal, img').forEach(e => e.remove());
-    const promptHtml = clone.innerHTML
+    const promptHtml = DOMPurify.sanitize(clone.innerHTML
       .replace(/\s(width|height)\s*:\s*\d+px/gi, '')
       .replace(/(\s*<br\s*\/?>\s*){3,}/gi, '<br><br>')
-      .replace(/(&nbsp;|\s)+/g, ' ').trim();
+      .replace(/(&nbsp;|\s)+/g, ' ').trim());
 
     const num = (items.find(i => i.num != null) || {}).num ?? null;
     
@@ -472,54 +472,115 @@ function renderStudentPage(model) {
 
 function showWelcome(lastName, errMsg) {
   $topbar.innerHTML = '';
+  $app.parentElement.classList.remove('wrap--content');
   
   const currentName = rootHandle ? rootHandle.name : lastName;
   let buttonsHtml = '';
   if (rootHandle) {
-    buttonsHtml = `<button class="primary big" id="resume-current">המשך בתיקייה הנוכחית · ${esc(currentName)}</button><button class="ghost" id="pick">פתיחת תיקייה חדשה</button>`;
+    buttonsHtml = `
+      <div class="split-btn">
+        <button class="primary big" id="resume-current">המשך בתיקייה הנוכחית · ${esc(currentName)}</button>
+        <button class="primary big split-toggle" id="split-toggle" aria-haspopup="true" aria-expanded="false" aria-label="אפשרויות נוספות">▾</button>
+        <div class="split-drop" id="split-drop" hidden>
+          <button id="pick">פתיחת תיקייה חדשה</button>
+        </div>
+      </div>`;
   } else if (lastName) {
-    buttonsHtml = `<button class="primary big" id="resume">פתיחת התיקייה האחרונה · ${esc(lastName)}</button><button class="ghost" id="pick">בחירת תיקייה אחרת</button>`;
+    buttonsHtml = `
+      <div class="split-btn">
+        <button class="primary big" id="resume">פתיחת התיקייה האחרונה · ${esc(lastName)}</button>
+        <button class="primary big split-toggle" id="split-toggle" aria-haspopup="true" aria-expanded="false" aria-label="אפשרויות נוספות">▾</button>
+        <div class="split-drop" id="split-drop" hidden>
+          <button id="pick">בחירת תיקייה אחרת</button>
+        </div>
+      </div>`;
   } else {
     buttonsHtml = `<button class="primary big" id="pick">בחירת תיקייה להתחלה…</button>`;
   }
 
-  $app.innerHTML = `
-    <div class="welcome">
-      <h1 dir="ltr">Open Teacher <em>Assessment</em></h1>
-      <div class="hero-subtitle">מערכת פשוטה ומודרנית לצפייה בבחינות הדמייה מכל מקום.</div>
-      
-      <div class="cta-group">
-        ${buttonsHtml}
-      </div>
+  const existing = $app.querySelector('.welcome');
+  if (existing) {
+    const ctaGroup = existing.querySelector('.cta-group');
+    if (ctaGroup) ctaGroup.innerHTML = buttonsHtml;
+    
+    let errEl = existing.querySelector('.err');
+    if (errMsg) {
+      if (errEl) {
+        errEl.textContent = errMsg;
+      } else {
+        existing.querySelector('.welcome-main').insertAdjacentHTML('beforeend', `<div class="err">${esc(errMsg)}</div>`);
+      }
+    } else if (errEl) {
+      errEl.remove();
+    }
+  } else {
+    $app.innerHTML = `
+      <div class="welcome">
+        <div class="welcome-main">
+          <h1 dir="ltr">Open Teacher <em>Assessment</em></h1>
+          <div class="hero-subtitle">מערכת פשוטה ומודרנית לצפייה בבחינות הדמייה מכל מקום.</div>
 
-      <div class="welcome-footer">
-        <div class="footer-col steps">
-          <h3>📖 איך מתחילים?</h3>
-          <ol>
-            <li>ודאו שאתם משתמשים בדפדפן <strong>Chrome</strong> או <strong>Edge</strong>.</li>
-            <li>היכנסו למערכת ה-<strong>iTest</strong> (המערכת הישנה) והורידו את נתוני הבחינות (או קבלו אותם מ<strong>אחראי התקשוב / טכנאי המחשבים</strong>).</li>
-            <li>שמרו את הנתונים במחשב. יש לוודא שהנתונים חולצו כך ש<strong>לכל תלמיד יש תיקייה נפרדת</strong> (תעודת זהות).</li>
-            <li>לחצו על הכפתור למעלה ובחרו את התיקייה הראשית שמכילה את תיקיות התלמידים.</li>
-          </ol>
+          <div class="cta-group">
+            ${buttonsHtml}
+          </div>
+          ${errMsg ? `<div class="err">${esc(errMsg)}</div>` : ''}
         </div>
-        <div class="footer-col security">
-          <h3>🛡️ קוד פתוח ואבטחה</h3>
-          <p>פרויקט <strong>קוד פתוח</strong>. שום נתון אינו נשמר באפליקציה ושום מידע לא נשלח לאינטרנט. כל קובצי הבחינות והתשובות נשארים ונקראים <strong>אך ורק על המחשב האישי שלכם</strong> כחלק מבסיס האבטחה של המערכת.</p>
-          <p class="repo-link"><a href="https://github.com/shlomsh/open-teacher-assesment" target="_blank" rel="noopener">צפייה בקוד המקור ב-GitHub ↗</a></p>
-        </div>
-      </div>
-      
-      ${errMsg ? `<div class="err">${esc(errMsg)}</div>` : ''}
-    </div>`;
+
+        <footer class="welcome-footer">
+          <div class="footer-col steps">
+            <details>
+              <summary>📖 איך מתחילים?</summary>
+              <ol>
+                <li>ודאו שאתם משתמשים בדפדפן <strong>Chrome</strong> או <strong>Edge</strong>.</li>
+                <li>היכנסו למערכת ה-<strong>iTest</strong> (המערכת הישנה) והורידו את נתוני הבחינות (או קבלו אותם מ<strong>אחראי התקשוב / טכנאי המחשבים</strong>).</li>
+                <li>שמרו את הנתונים במחשב. יש לוודא שהנתונים חולצו כך ש<strong>לכל תלמיד יש תיקייה נפרדת</strong> (תעודת זהות).</li>
+                <li>לחצו על הכפתור למעלה ובחרו את התיקייה הראשית שמכילה את תיקיות התלמידים.</li>
+              </ol>
+            </details>
+          </div>
+          <div class="footer-col security">
+            <details>
+              <summary>🛡️ קוד פתוח ואבטחה</summary>
+              <p>פרויקט <strong>קוד פתוח</strong>. שום נתון אינו נשמר באפליקציה ושום מידע לא נשלח לאינטרנט. כל קובצי הבחינות והתשובות נשארים ונקראים <strong>אך ורק על המחשב האישי שלכם</strong> כחלק מבסיס האבטחה של המערכת.</p>
+              <p class="repo-link"><a href="https://github.com/shlomsh/open-teacher-assesment" target="_blank" rel="noopener">צפייה בקוד המקור ב-GitHub ↗</a></p>
+            </details>
+          </div>
+        </footer>
+      </div>`;
+  }
 
   const pickBtn = document.getElementById('pick'); if (pickBtn) pickBtn.onclick = () => pickFolder();
   const resumeBtn = document.getElementById('resume'); if (resumeBtn) resumeBtn.onclick = () => resumeFolder();
   const resumeCurBtn = document.getElementById('resume-current'); if (resumeCurBtn) resumeCurBtn.onclick = () => { location.hash = ''; };
+
+  const splitToggle = document.getElementById('split-toggle');
+  const splitDrop = document.getElementById('split-drop');
+  if (splitToggle && splitDrop) {
+    splitToggle.onclick = (e) => {
+      e.stopPropagation();
+      const opening = splitDrop.hidden;
+      splitDrop.hidden = !opening;
+      splitToggle.setAttribute('aria-expanded', String(opening));
+      if (opening) {
+        // only listen for outside clicks while the dropdown is open; auto-removes after one fire
+        setTimeout(() => {
+          document.addEventListener('click', function close(ev) {
+            if (!splitDrop.contains(ev.target)) {
+              splitDrop.hidden = true;
+              document.removeEventListener('click', close);
+            }
+          });
+        }, 0);
+      }
+    };
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') splitDrop.hidden = true; });
+  }
 }
 
 function showNav() {
   currentStudentId = null;
   $topbar.innerHTML = '';
+  $app.parentElement.classList.add('wrap--content');
   const statuses = students.map(s => gradingStatus(s.id));
   const doneCount = statuses.filter(st => st.state === 'done').length;
   let summaryHtml = '';
@@ -573,6 +634,7 @@ async function showStudent(id) {
   if (!student) { location.hash = ''; return; }
   currentStudentId = id;
   $topbar.innerHTML = ''; // Hide topbar when viewing a student
+  $app.parentElement.classList.add('wrap--content');
   $app.innerHTML = `<div class="spinner">טוען…</div>`;
   try {
     const model = await buildModel(student);
@@ -620,6 +682,7 @@ async function ensurePermission(handle) {
 
 async function scanAndShow() {
   await flushPendingSaves();
+  $app.parentElement.classList.add('wrap--content');
   $app.innerHTML = `<div class="spinner">סורק תיקיות…</div>`;
   modelCache.clear();
   students = [];
@@ -660,6 +723,7 @@ async function pickFolder() {
     showWelcome(null, e.message); return;
   }
   await saveHandle(rootHandle);
+  history.replaceState(null, '', location.pathname);
   route();
 }
 
@@ -669,6 +733,7 @@ async function resumeFolder() {
     if (!h) return pickFolder();
     if (!(await ensurePermission(h))) { showWelcome(h.name, 'ההרשאה לתיקייה נדחתה.'); return; }
     rootHandle = h;
+    history.replaceState(null, '', location.pathname);
     route();
   } catch (e) { showWelcome(null, e.message); }
 }
