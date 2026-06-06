@@ -427,8 +427,8 @@ function renderStudentPage(model) {
       <div class="q-note" style="grid-row:${i + 2}">${renderSubGrading(it)}</div>`).join('');
     return `
     <section class="q" data-qnum="${q.num}">
-      <div class="q-total" hidden title="סכום ציוני השאלה"><span class="q-total-val"></span></div>
-      <div class="q-paper" aria-hidden="true"></div>
+      <div class="q-total" hidden title="סכום ציוני השאלה" style="grid-row:${q.items.length + 2}"><span class="q-total-val"></span></div>
+      <div class="q-paper" aria-hidden="true" style="grid-row: 1 / ${q.items.length + 2}"></div>
       <div class="q-head">
         <div class="q-header">
           <h3><span class="qbadge">${esc(q.num ?? '✦')}</span><span>${esc(title)}</span></h3>
