@@ -8,6 +8,7 @@ node_modules/
 
 # Claude Code local memory & settings
 .claude/
+.impeccable/
 
 # Exam data must NEVER be committed (student PII, large). Keep it outside the repo.
 מבחן הדמיה/

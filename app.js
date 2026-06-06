@@ -16,17 +16,50 @@ const modelCache = new Map();   // id -> rendered model (parsed once)
 // ---------- Portable Per-Student Grading Storage ----------
 let allGrades = {}; // { studentId: { key: value } }
 let saveTimeouts = {};
+let currentStudentId = null; // student currently on screen (for save-state feedback)
+
+// Reflects the save lifecycle in the student header. No-ops unless that student
+// is the one on screen, so a debounced save firing after navigation stays silent.
+function setSaveState(studentId, state) {
+  if (studentId !== currentStudentId) return;
+  const el = document.getElementById('save-state');
+  if (!el) return;
+  if (state === 'saving') {
+    el.className = 'save-state saving';
+    el.innerHTML = `<span class="dot"></span>שומר…`;
+  } else if (state === 'saved') {
+    const t = new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    el.className = 'save-state saved';
+    el.innerHTML = `<span class="dot"></span>נשמר ✓ ${esc(t)}`;
+  } else if (state === 'error') {
+    el.className = 'save-state error';
+    el.innerHTML = `<span class="dot"></span>השמירה נכשלה <button type="button" class="retry">נסה שוב</button>`;
+    el.querySelector('.retry').onclick = async () => {
+      const student = students.find(s => s.id === studentId);
+      if (student && !(await ensurePermission(student.dir))) return;
+      saveStudentGrades(studentId);
+    };
+  } else {
+    el.className = 'save-state';
+    el.innerHTML = '';
+  }
+}
 
 async function saveStudentGrades(studentId) {
   const student = students.find(s => s.id === studentId);
-  if (!student) return;
+  if (!student) return false;
+  setSaveState(studentId, 'saving');
   try {
     const fileHandle = await student.dir.getFileHandle('grades.json', { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(JSON.stringify(allGrades[studentId] || {}, null, 2));
     await writable.close();
+    setSaveState(studentId, 'saved');
+    return true;
   } catch (e) {
     console.error(`Failed to save grades for ${studentId}`, e);
+    setSaveState(studentId, 'error');
+    return false;
   }
 }
 
@@ -34,13 +67,46 @@ function setStudentGradeData(studentId, key, val) {
   if (!allGrades[studentId]) allGrades[studentId] = {};
   if (val === null || val === '') delete allGrades[studentId][key];
   else allGrades[studentId][key] = val;
-  
+
+  setSaveState(studentId, 'saving'); // immediate feedback while the write is debounced
   if (saveTimeouts[studentId]) clearTimeout(saveTimeouts[studentId]);
   saveTimeouts[studentId] = setTimeout(() => saveStudentGrades(studentId), 1000);
 }
 
 function getStudentGradeData(studentId, key) {
   return allGrades[studentId]?.[key];
+}
+
+// The overall grade is the sum of the per-section grades; recompute and persist it.
+function recomputeOverall(studentId) {
+  let sum = 0, any = false;
+  $app.querySelectorAll('.grade-input').forEach(inp => {
+    if (inp.dataset.itemkey === 'overall') return;
+    const v = inp.value.trim();
+    if (v !== '') { sum += parseInt(v, 10) || 0; any = true; }
+  });
+  const overall = $app.querySelector('.grade-input[data-itemkey="overall"]');
+  const val = any ? String(sum) : '';
+  if (overall) overall.value = val;
+  setStudentGradeData(studentId, 'grade_overall', val);
+}
+
+// Flush any debounced saves immediately (e.g. before re-scanning the folder),
+// so a fast navigation never drops an unwritten edit.
+async function flushPendingSaves() {
+  for (const id of Object.keys(saveTimeouts)) {
+    if (saveTimeouts[id]) { clearTimeout(saveTimeouts[id]); delete saveTimeouts[id]; await saveStudentGrades(id); }
+  }
+}
+
+// Grading completion for the student list: 'done' once a final exam grade is set,
+// 'progress' if any per-item mark exists, otherwise 'none'.
+function gradingStatus(studentId) {
+  const g = allGrades[studentId] || {};
+  const overall = g.grade_overall;
+  if (overall != null && String(overall).trim() !== '') return { state: 'done', grade: String(overall).trim() };
+  const hasMarks = Object.keys(g).some(k => (k.startsWith('grade_') || k.startsWith('comment_')) && String(g[k]).trim() !== '');
+  return { state: hasMarks ? 'progress' : 'none' };
 }
 
 // ---------- tiny IndexedDB (remember last folder handle) ----------
@@ -251,7 +317,7 @@ function renderSubGrading(it) {
   return `
     <div class="teacher-pen" title="הערכת מורה">
       <div class="pen-grade">
-        <input type="text" class="grade-input" data-itemkey="${esc(it.key)}" value="${esc(it.grade)}" placeholder="ציון" />
+        <input type="text" class="grade-input" data-itemkey="${esc(it.key)}" inputmode="numeric" value="${esc(it.grade)}" placeholder="ציון" />
       </div>
       <div class="pen-comment">
         <textarea class="comment-input" data-itemkey="${esc(it.key)}" placeholder="הערה...">${esc(it.comment)}</textarea>
@@ -321,32 +387,34 @@ function renderItem(it, q) {
     content = `<span style="color:var(--rose)">סוג שאלה לא נתמך: ${esc(it.type)}</span>`;
   }
   
-  return `
-    <div class="ans-wrapper">
-      ${renderSubGrading(it)}
-      <div class="ans ${it.type}">${sPart}${content}</div>
-    </div>
-  `;
+  return `<div class="ans ${it.type}">${sPart}${content}</div>`;
 }
 function renderStudentPage(model) {
   const m = model.meta || {};
   const examId = model.examId;
   const qs = model.questions.map(q => {
     const title = (q.title || (q.num != null ? 'שאלה ' + q.num : 'שאלה')).replace(/^[\s–—-]+/, '');
+    const rows = q.items.map((it, i) => `
+      <div class="ans-cell${i ? ' sep' : ''}" style="grid-row:${i + 2}">${renderItem(it, q)}</div>
+      <div class="q-note" style="grid-row:${i + 2}">${renderSubGrading(it)}</div>`).join('');
     return `
     <section class="q" data-qnum="${q.num}">
-      <div class="q-header">
-        <h3><span class="qbadge">${esc(q.num ?? '✦')}</span><span>${esc(title)}</span></h3>
+      <div class="q-paper" aria-hidden="true"></div>
+      <div class="q-head">
+        <div class="q-header">
+          <h3><span class="qbadge">${esc(q.num ?? '✦')}</span><span>${esc(title)}</span></h3>
+        </div>
+        ${renderStimulus(q.stimulus)}
+        ${q.promptHtml ? `<details class="prompt" open><summary>השאלה</summary><div class="prompt-body">${q.promptHtml}</div></details>` : ''}
+        <div class="answers-head">תשובות התלמיד</div>
       </div>
-      ${renderStimulus(q.stimulus)}
-      ${q.promptHtml ? `<details class="prompt" open><summary>השאלה</summary><div class="prompt-body">${q.promptHtml}</div></details>` : ''}
-      <div class="answers-head">תשובות התלמיד</div>
-      ${q.items.map(it => renderItem(it, q)).join('')}
+      ${rows}
     </section>`;
   }).join('');
   return `
     <a class="backlink" href="#">→ חזרה לרשימת התלמידים</a>
     <header class="exam">
+      <div class="save-state" id="save-state" aria-live="polite"></div>
       <div class="label kicker">תיק בחינה</div>
       <h2>תלמיד/ה · ${esc(model.id)}</h2>
       <div class="meta">
@@ -354,8 +422,20 @@ function renderStudentPage(model) {
         ${m.term ? `<span><b>מועד:</b> ${esc(m.term)}</span>` : ''}
         ${m.code ? `<span><b>סמל שאלון:</b> ${esc(m.code)}</span>` : ''}
       </div>
-      <div class="answered">שאלות שנענו: ${model.answered.join(', ') || '—'}</div>
+      <div class="answered">שאלות שנענו: ${model.answered.join(', ') || '—'} ${model.answered.length > 0 ? `<span style="opacity:0.75; font-size:0.9em; margin-inline-start:4px;">(סה״כ ${model.answered.length})</span>` : ''}</div>
     </header>
+    <section class="exam-grade">
+      <label class="eg-grade">
+        <span>ציון סופי (סכום)</span>
+        <input type="text" class="grade-input" data-itemkey="overall" inputmode="numeric" readonly
+               value="${esc(getStudentGradeData(model.id, 'grade_overall') || '')}" placeholder="—" />
+      </label>
+      <label class="eg-comment">
+        <span>הערה כללית לתלמיד</span>
+        <textarea class="comment-input" data-itemkey="overall"
+                  placeholder="הערה כללית על הבחינה…">${esc(getStudentGradeData(model.id, 'comment_overall') || '')}</textarea>
+      </label>
+    </section>
     ${qs || '<p>לא נמצאו תשובות.</p>'}`;
 }
 
@@ -408,7 +488,10 @@ function showWelcome(lastName, errMsg) {
 }
 
 function showNav() {
+  currentStudentId = null;
   $topbar.innerHTML = '';
+  const statuses = students.map(s => gradingStatus(s.id));
+  const doneCount = statuses.filter(st => st.state === 'done').length;
   let summaryHtml = '';
   if (students.length > 0) {
     const m = students[0].meta;
@@ -416,6 +499,8 @@ function showNav() {
       summaryHtml = `
       <div class="exam-summary">
         <div class="summary-item"><span class="val">${students.length}</span><span class="lbl">תלמידים</span></div>
+        <div class="summary-sep"></div>
+        <div class="summary-item"><span class="val">${doneCount}/${students.length}</span><span class="lbl">הוערכו</span></div>
         <div class="summary-sep"></div>
         <div class="summary-item">
           <span class="lbl">שאלון</span><span class="val">${esc(m.code || '—')}</span>
@@ -429,9 +514,16 @@ function showNav() {
   }
 
   const cards = students.map((s, i) => {
+    const st = statuses[i];
+    const badge = st.state === 'done'
+      ? `<div class="card-status done">✓ הוערך · ${esc(st.grade)}</div>`
+      : st.state === 'progress'
+        ? `<div class="card-status progress"><span class="dot"></span>בתהליך</div>`
+        : `<div class="card-status none">טרם הוערך</div>`;
     return `
-    <a class="card" href="#${encodeURIComponent(s.id)}">
+    <a class="card ${st.state}" href="#${encodeURIComponent(s.id)}">
       <div class="sid">${esc(s.id)}</div>
+      ${badge}
       <div class="go">צפייה ←</div>
     </a>`;
   }).join('');
@@ -449,6 +541,7 @@ function showNav() {
 async function showStudent(id) {
   const student = students.find(s => s.id === id);
   if (!student) { location.hash = ''; return; }
+  currentStudentId = id;
   $topbar.innerHTML = ''; // Hide topbar when viewing a student
   $app.innerHTML = `<div class="spinner">טוען…</div>`;
   try {
@@ -456,13 +549,22 @@ async function showStudent(id) {
     $app.innerHTML = renderStudentPage(model);
     document.querySelector('.backlink').onclick = (e) => { e.preventDefault(); location.hash = ''; };
     
-    // Bind grading inputs
+    // Bind grading inputs (integer-only; overall is the computed sum of sections)
     $app.querySelectorAll('.grade-input').forEach(inp => {
+      if (inp.dataset.itemkey === 'overall') return; // read-only, computed
       inp.oninput = (e) => {
         const itemkey = e.target.dataset.itemkey;
+        const clean = e.target.value.replace(/[^\d]/g, '');
+        if (clean !== e.target.value) {
+          const pos = e.target.selectionStart - (e.target.value.length - clean.length);
+          e.target.value = clean;
+          try { e.target.setSelectionRange(pos, pos); } catch {}
+        }
         setStudentGradeData(student.id, `grade_${itemkey}`, e.target.value);
+        recomputeOverall(student.id);
       };
     });
+    recomputeOverall(student.id);
     $app.querySelectorAll('.comment-input').forEach(inp => {
       inp.oninput = (e) => {
         const itemkey = e.target.dataset.itemkey;
@@ -485,6 +587,7 @@ async function ensurePermission(handle) {
 }
 
 async function scanAndShow() {
+  await flushPendingSaves();
   $app.innerHTML = `<div class="spinner">סורק תיקיות…</div>`;
   modelCache.clear();
   students = [];
@@ -567,3 +670,48 @@ window.addEventListener('hashchange', route);
   try { const h = await loadHandle(); if (h) last = h.name; } catch {}
   showWelcome(last);
 })();
+
+// ---------- Lightbox ----------
+document.addEventListener('click', e => {
+  const thumb = e.target.closest('a.thumb');
+  const snapCrop = e.target.closest('.snap-crop');
+  const lightbox = e.target.closest('#lightbox');
+  
+  if (thumb) {
+    e.preventDefault();
+    showLightbox(thumb.href);
+  } else if (snapCrop) {
+    let imgUrl = null;
+    if (snapCrop.tagName === 'IMG') {
+      imgUrl = snapCrop.src;
+    } else if (snapCrop.style.backgroundImage) {
+      const match = snapCrop.style.backgroundImage.match(/url\("?(.+?)"?\)/);
+      if (match) imgUrl = match[1];
+    }
+    if (imgUrl) showLightbox(imgUrl);
+  } else if (lightbox) {
+    hideLightbox();
+  }
+});
+
+function showLightbox(url) {
+  const $lightbox = document.getElementById('lightbox');
+  const $img = document.getElementById('lightbox-img');
+  if ($lightbox && $img) {
+    $img.src = url;
+    $lightbox.classList.add('active');
+  }
+}
+
+function hideLightbox() {
+  const $lightbox = document.getElementById('lightbox');
+  const $img = document.getElementById('lightbox-img');
+  if ($lightbox) {
+    $lightbox.classList.remove('active');
+    setTimeout(() => { if ($img) $img.src = ''; }, 250);
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') hideLightbox();
+});
