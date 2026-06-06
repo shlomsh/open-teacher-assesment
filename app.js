@@ -293,27 +293,26 @@ function showWelcome(lastName, errMsg) {
     <div class="welcome">
       <div class="kicker">מערכת צפייה בבחינות הדמייה</div>
       <h1 dir="ltr">Open Teacher<br><em>Assessment</em></h1>
+      <div class="hero-subtitle">מערכת פשוטה ומאובטחת לצפייה בבחינות תלמידים ובדיקתן באופן מקומי.</div>
       
-      <div class="info-grid">
-        <div class="info-box security">
-          <h3>אבטחת מידע וקוד פתוח</h3>
-          <p>מערכת זו היא פרויקט <strong>קוד פתוח</strong>. שום נתון אינו נשמר על ידי האפליקציה ושום מידע לא נשלח לאינטרנט. כל קובצי הבחינות והתשובות נשארים ונקראים <strong>אך ורק על המחשב האישי שלכם</strong>. עיקרון זה הוא בסיס האבטחה שעליו תוכננה המערכת.</p>
-        </div>
-
-        <div class="info-box steps">
-          <h3>איך מתחילים? (צעד אחר צעד)</h3>
-          <ol>
-            <li>ודאו שאתם פותחים את המערכת בדפדפן <strong>Chrome</strong> או <strong>Edge</strong>.</li>
-            <li>שמרו את תיקיית הבחינות על המחשב שלכם (אם ירדה כ-Zip, חלצו לתיקייה רגילה).</li>
-            <li>לחצו על הכפתור למטה (<strong>${lastName ? 'פתיחת התיקייה האחרונה' : 'בחירת תיקייה להתחלה'}</strong>).</li>
-            <li>בחלון שיפתח, בחרו את התיקייה הראשית של הבחינות ולחצו על אישור.</li>
-          </ol>
-        </div>
-      </div>
-
       <div class="cta-group">
         ${lastName ? `<button class="primary big" id="resume">פתיחת התיקייה האחרונה · ${esc(lastName)}</button><button class="ghost" id="pick">בחירת תיקייה אחרת</button>`
                    : `<button class="primary big" id="pick">בחירת תיקייה להתחלה…</button>`}
+      </div>
+
+      <div class="welcome-footer">
+        <div class="footer-col steps">
+          <h3>📖 איך מתחילים?</h3>
+          <ol>
+            <li>ודאו שאתם משתמשים בדפדפן <strong>Chrome</strong> או <strong>Edge</strong>.</li>
+            <li>שמרו וחלצו את תיקיית הבחינות על המחשב (היא צריכה להכיל את תעודות הזהות).</li>
+            <li>לחצו על הכפתור למעלה ובחרו את התיקייה הראשית של הבחינות.</li>
+          </ol>
+        </div>
+        <div class="footer-col security">
+          <h3>🛡️ קוד פתוח ואבטחה</h3>
+          <p>פרויקט <strong>קוד פתוח</strong>. שום נתון אינו נשמר באפליקציה ושום מידע לא נשלח לאינטרנט. כל קובצי הבחינות והתשובות נשארים ונקראים <strong>אך ורק על המחשב האישי שלכם</strong> כחלק מבסיס האבטחה של המערכת.</p>
+        </div>
       </div>
       
       ${errMsg ? `<div class="err">${esc(errMsg)}</div>` : ''}
