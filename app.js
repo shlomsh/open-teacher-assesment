@@ -360,10 +360,6 @@ function renderStudentPage(model) {
 }
 
 // ---------- views ----------
-function renderTopbar() {
-  if (!rootHandle) { $topbar.innerHTML = ''; return; }
-  $topbar.innerHTML = `<a class="backlink" href="#welcome" id="home-link" style="margin-bottom:16px; display:inline-block;">→ חזרה למסך הראשי</a>`;
-}
 
 function showWelcome(lastName, errMsg) {
   $topbar.innerHTML = '';
@@ -412,7 +408,7 @@ function showWelcome(lastName, errMsg) {
 }
 
 function showNav() {
-  renderTopbar();
+  $topbar.innerHTML = '';
   let summaryHtml = '';
   if (students.length > 0) {
     const m = students[0].meta;
@@ -441,6 +437,7 @@ function showNav() {
   }).join('');
   
   $app.innerHTML = `
+    <a class="backlink" href="#welcome" id="home-link">→ חזרה למסך הראשי</a>
     <div class="page-head">
       <h1 class="page-h">בחינות תלמידים</h1>
       ${summaryHtml}
