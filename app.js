@@ -377,7 +377,7 @@ function showWelcome(lastName, errMsg) {
   $app.innerHTML = `
     <div class="welcome">
       <h1 dir="ltr">Open Teacher <em>Assessment</em></h1>
-      <div class="hero-subtitle">מערכת פשוטה ומאובטחת לצפייה בבחינות הדמייה ובדיקתן באופן מקומי.</div>
+      <div class="hero-subtitle">מערכת פשוטה ומודרנית לצפייה בבחינות הדמייה מכל מקום.</div>
       
       <div class="cta-group">
         ${buttonsHtml}
