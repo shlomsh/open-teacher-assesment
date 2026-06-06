@@ -192,7 +192,6 @@ async function buildModel(student) {
       return (a.slot || 0) - (b.slot || 0);
     });
     for (const it of q.items) {
-      it.overridePoints = getStudentGradeData(student.id, `override_${it.key}`) ?? null;
       it.grade = getStudentGradeData(student.id, `grade_${it.key}`) || '';
       it.comment = getStudentGradeData(student.id, `comment_${it.key}`) || '';
     }
@@ -249,22 +248,13 @@ function renderStimulus(s) {
 }
 
 function renderSubGrading(it) {
-  const maxP = it.overridePoints !== null ? it.overridePoints : 0;
   return `
-    <div class="grading-panel">
-      <div class="grading-fields">
-        <div class="q-points">
-          <label>ניקוד מרבי:</label>
-          <input type="number" class="override-points" value="${it.overridePoints ?? ''}" data-itemkey="${esc(it.key)}" />
-        </div>
-        <div class="grading-grade">
-          <label>ציון:</label>
-          <input type="number" class="grade-input" data-itemkey="${esc(it.key)}" value="${esc(it.grade)}" max="${maxP}" />
-        </div>
-        <div class="grading-comment">
-          <label>הערה:</label>
-          <input type="text" class="comment-input" data-itemkey="${esc(it.key)}" value="${esc(it.comment)}" />
-        </div>
+    <div class="teacher-pen" title="הערכת מורה">
+      <div class="pen-grade">
+        <input type="text" class="grade-input" data-itemkey="${esc(it.key)}" value="${esc(it.grade)}" placeholder="ציון" />
+      </div>
+      <div class="pen-comment">
+        <input type="text" class="comment-input" data-itemkey="${esc(it.key)}" value="${esc(it.comment)}" placeholder="הערה..." />
       </div>
     </div>`;
 }
@@ -272,11 +262,13 @@ function renderSubGrading(it) {
 function renderItem(it, q) {
   const tag = it.part ? `${PART[it.part] || it.part}${it.slot ? `(${it.slot})` : ''}` : (it.slot ?? '');
   const sPart = `<div class="ans-tag">${esc(tag)}</div>`;
-  if (it.type === 'inplace')
-    return `<div class="ans">${sPart}<div class="ans-body">${it.answerHtml || esc(it.answerText)}</div>${renderSubGrading(it)}</div>`;
-  if (it.type === 'cloze')
-    return `<div class="ans cloze">${sPart}<div class="ans-body"><span class="chip">${esc(it.selected)}</span></div>${renderSubGrading(it)}</div>`;
-  if (it.type === 'asset') {
+  
+  let content = '';
+  if (it.type === 'inplace') {
+    content = `<div class="ans-body">${it.answerHtml || esc(it.answerText)}</div>`;
+  } else if (it.type === 'cloze') {
+    content = `<div class="ans-body"><span class="chip">${esc(it.selected)}</span></div>`;
+  } else if (it.type === 'asset') {
     let html = '';
     const snaps = it.data.snapshots || [];
     if (snaps.length > 0) {
@@ -317,12 +309,24 @@ function renderItem(it, q) {
     } else {
       html = '<div class="missing">לא צולמו תמונות ביישומון.</div>';
     }
-    return `<div class="ans asset">${sPart}<div class="ans-body">
-      <div style="margin-bottom:12px"><span class="chip">תשובת יישומון צילום</span></div>
-      ${html}
-    </div>${renderSubGrading(it)}</div>`;
+    content = `<div class="ans-body"><div style="margin-bottom:12px"><span class="chip">תשובת יישומון צילום</span></div>${html}</div>`;
+  } else if (it.type === 'table') {
+    content = `<div class="table-wrap"><table>
+      ${it.headers?.length ? `<thead><tr>${it.headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>` : ''}
+      <tbody>
+        ${it.rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  } else {
+    content = `<span style="color:var(--rose)">סוג שאלה לא נתמך: ${esc(it.type)}</span>`;
   }
-  return '';
+  
+  return `
+    <div class="ans-wrapper">
+      ${renderSubGrading(it)}
+      <div class="ans ${it.type}">${sPart}${content}</div>
+    </div>
+  `;
 }
 function renderStudentPage(model) {
   const m = model.meta || {};
@@ -467,16 +471,6 @@ async function showStudent(id) {
         setStudentGradeData(student.id, `comment_${itemkey}`, e.target.value);
       };
     });
-    $app.querySelectorAll('.override-points').forEach(inp => {
-      inp.oninput = (e) => {
-        const itemkey = e.target.dataset.itemkey;
-        const val = e.target.value !== '' ? parseInt(e.target.value, 10) : null;
-        setStudentGradeData(student.id, `override_${itemkey}`, val);
-        // update max on grade input
-        const gInp = document.querySelector(`.grade-input[data-itemkey="${itemkey}"]`);
-        if (gInp) gInp.setAttribute('max', val !== null ? val : 0);
-      };
-    });
 
     window.scrollTo(0, 0);
   } catch (e) {
@@ -519,7 +513,6 @@ async function scanAndShow() {
     return;
   }
   students.sort((a, b) => a.id.localeCompare(b.id, 'he', { numeric: true }));
-  route();
 }
 
 async function pickFolder() {
@@ -534,7 +527,7 @@ async function pickFolder() {
     showWelcome(null, e.message); return;
   }
   await saveHandle(rootHandle);
-  await scanAndShow();
+  route();
 }
 
 async function resumeFolder() {
@@ -543,14 +536,23 @@ async function resumeFolder() {
     if (!h) return pickFolder();
     if (!(await ensurePermission(h))) { showWelcome(h.name, 'ההרשאה לתיקייה נדחתה.'); return; }
     rootHandle = h;
-    await scanAndShow();
+    route();
   } catch (e) { showWelcome(null, e.message); }
 }
 
-function route() {
+async function route() {
   if (!rootHandle) return;
   const id = decodeURIComponent(location.hash.replace(/^#/, ''));
-  if (id) showStudent(id); else showNav();
+  if (id) {
+    showStudent(id); 
+  } else {
+    // Rescan when returning to the student list to pick up newly pasted folders
+    if (document.querySelector('.page-head')) {
+       // already on nav, but doing a refresh?
+    }
+    await scanAndShow();
+    showNav();
+  }
 }
 
 window.addEventListener('hashchange', route);
