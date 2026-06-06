@@ -476,6 +476,7 @@ function showWelcome(lastName, errMsg) {
         <div class="footer-col security">
           <h3>🛡️ קוד פתוח ואבטחה</h3>
           <p>פרויקט <strong>קוד פתוח</strong>. שום נתון אינו נשמר באפליקציה ושום מידע לא נשלח לאינטרנט. כל קובצי הבחינות והתשובות נשארים ונקראים <strong>אך ורק על המחשב האישי שלכם</strong> כחלק מבסיס האבטחה של המערכת.</p>
+          <p class="repo-link"><a href="https://github.com/shlomsh/open-teacher-assesment" target="_blank" rel="noopener">צפייה בקוד המקור ב-GitHub ↗</a></p>
         </div>
       </div>
       
