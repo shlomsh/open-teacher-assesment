@@ -67,3 +67,7 @@ Background on the export format, reverse-engineered from the legacy system:
   app flags those questions as "stimulus unavailable".
 - Students answer a chosen subset of questions, so rendering is answer-driven.
 - Validated across the 2024 and 2026 sittings of exam 816367 (Applied Art).
+
+## License
+
+[MIT](LICENSE) © shlomsh
