@@ -91,6 +91,22 @@ function recomputeOverall(studentId) {
   setStudentGradeData(studentId, 'grade_overall', val);
 }
 
+// Read-only per-question total: sum of its sub-section grades, shown in the
+// question header. Purely derived (never persisted) — recomputed live on edit.
+function recomputeQuestionTotals() {
+  $app.querySelectorAll('section.q').forEach(sec => {
+    const el = sec.querySelector('.q-total');
+    if (!el) return;
+    let sum = 0, any = false;
+    sec.querySelectorAll('.grade-input').forEach(inp => {
+      const v = inp.value.trim();
+      if (v !== '') { sum += parseInt(v, 10) || 0; any = true; }
+    });
+    el.hidden = !any;
+    if (any) el.querySelector('.q-total-val').textContent = String(sum);
+  });
+}
+
 // Flush any debounced saves immediately (e.g. before re-scanning the folder),
 // so a fast navigation never drops an unwritten edit.
 async function flushPendingSaves() {
@@ -344,7 +360,19 @@ function renderItem(it, q) {
         if (q && q.stimulus && q.stimulus.galleries) {
           const filename = s.src ? s.src.split('/').pop() : null;
           if (filename) {
-            for (const gal of q.stimulus.galleries) {
+            const sortedGals = [...q.stimulus.galleries].sort((a, b) => {
+              const aInSrc = s.src && s.src.includes(a.name) ? 1 : 0;
+              const bInSrc = s.src && s.src.includes(b.name) ? 1 : 0;
+              if (aInSrc !== bInSrc) return bInSrc - aInSrc;
+              if (it.part && q.num != null) {
+                const re = new RegExp(`^PhotoGallery_Q0*${q.num}${it.part}$`, 'i');
+                const aPart = re.test(a.name) ? 1 : 0;
+                const bPart = re.test(b.name) ? 1 : 0;
+                if (aPart !== bPart) return bPart - aPart;
+              }
+              return 0;
+            });
+            for (const gal of sortedGals) {
               const photo = gal.photos.find(p => p.name === filename);
               if (photo) { imgUrl = photo.url; break; }
             }
@@ -399,6 +427,7 @@ function renderStudentPage(model) {
       <div class="q-note" style="grid-row:${i + 2}">${renderSubGrading(it)}</div>`).join('');
     return `
     <section class="q" data-qnum="${q.num}">
+      <div class="q-total" hidden title="סכום ציוני השאלה"><span class="q-total-val"></span></div>
       <div class="q-paper" aria-hidden="true"></div>
       <div class="q-head">
         <div class="q-header">
@@ -563,9 +592,11 @@ async function showStudent(id) {
         }
         setStudentGradeData(student.id, `grade_${itemkey}`, e.target.value);
         recomputeOverall(student.id);
+        recomputeQuestionTotals();
       };
     });
     recomputeOverall(student.id);
+    recomputeQuestionTotals();
     $app.querySelectorAll('.comment-input').forEach(inp => {
       inp.oninput = (e) => {
         const itemkey = e.target.dataset.itemkey;
