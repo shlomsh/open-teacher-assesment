@@ -13,45 +13,52 @@ let rootHandle = null;          // chosen directory
 let students = [];              // [{id, dir, html, meta}]
 const modelCache = new Map();   // id -> rendered model (parsed once)
 
-// ---------- Portable Grading Storage ----------
-let gradesData = {};
-let gradesTimeout = null;
+// ---------- Portable Per-Student Grading Storage ----------
+let allGrades = {}; // { studentId: { key: value } }
+let saveTimeouts = {};
 
-async function loadGrades() {
-  if (!rootHandle) return;
+async function saveStudentGrades(studentId) {
+  const student = students.find(s => s.id === studentId);
+  if (!student) return;
   try {
-    const fileHandle = await rootHandle.getFileHandle('grades.json', { create: false });
-    const file = await fileHandle.getFile();
-    const text = await file.text();
-    gradesData = JSON.parse(text) || {};
-  } catch (e) {
-    gradesData = {};
-  }
-}
-
-async function saveGrades() {
-  if (!rootHandle) return;
-  try {
-    const fileHandle = await rootHandle.getFileHandle('grades.json', { create: true });
+    const fileHandle = await student.dir.getFileHandle('grades.json', { create: true });
     const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(gradesData, null, 2));
+    await writable.write(JSON.stringify(allGrades[studentId] || {}, null, 2));
     await writable.close();
   } catch (e) {
-    console.error('Failed to save grades.json', e);
+    console.error(`Failed to save grades for ${studentId}`, e);
   }
 }
 
-function setGradeData(key, val) {
-  if (val === null || val === '') delete gradesData[key];
-  else gradesData[key] = val;
+function setStudentGradeData(studentId, key, val) {
+  if (!allGrades[studentId]) allGrades[studentId] = {};
+  if (val === null || val === '') delete allGrades[studentId][key];
+  else allGrades[studentId][key] = val;
   
-  if (gradesTimeout) clearTimeout(gradesTimeout);
-  gradesTimeout = setTimeout(saveGrades, 1000);
+  if (saveTimeouts[studentId]) clearTimeout(saveTimeouts[studentId]);
+  saveTimeouts[studentId] = setTimeout(() => saveStudentGrades(studentId), 1000);
 }
 
-function getGradeData(key) {
-  return gradesData[key];
+function getStudentGradeData(studentId, key) {
+  return allGrades[studentId]?.[key];
 }
+
+// ---------- tiny IndexedDB (remember last folder handle) ----------
+function idb(mode, fn) {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('exam-viewer', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('kv');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const tx = open.result.transaction('kv', mode);
+      const req = fn(tx.objectStore('kv'));
+      tx.oncomplete = () => resolve(req && req.result);
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}
+const saveHandle = (h) => idb('readwrite', (s) => s.put(h, 'dir'));
+const loadHandle = () => idb('readonly', (s) => s.get('dir'));
 
 // ---------- file system helpers ----------
 async function getDir(handle, ...parts) {
@@ -185,9 +192,9 @@ async function buildModel(student) {
       return (a.slot || 0) - (b.slot || 0);
     });
     for (const it of q.items) {
-      it.overridePoints = getGradeData(`override_${rootHandle.name}_${it.key}`) ?? null;
-      it.grade = getGradeData(`grade_${rootHandle.name}_${student.id}_${it.key}`) || '';
-      it.comment = getGradeData(`comment_${rootHandle.name}_${student.id}_${it.key}`) || '';
+      it.overridePoints = getStudentGradeData(student.id, `override_${it.key}`) ?? null;
+      it.grade = getStudentGradeData(student.id, `grade_${it.key}`) || '';
+      it.comment = getStudentGradeData(student.id, `comment_${it.key}`) || '';
     }
   }
 
@@ -203,17 +210,18 @@ async function exportCsv() {
   const examId = rootHandle.name;
   let csv = '\uFEFF"Student ID","Item","Grade","Comment"\n';
   const rows = [];
-  const keys = Object.keys(gradesData).filter(k => k.startsWith(`grade_${examId}_`));
-  const studentIds = [...new Set(keys.map(k => k.split('_')[2]))].sort();
   
-  for (const sid of studentIds) {
-    const items = [...new Set(Object.keys(gradesData)
-      .filter(k => k.includes(`_${sid}_`) && k.startsWith('grade_'))
-      .map(k => k.split('_').slice(3).join('_')))].sort();
+  for (const student of students) {
+    const sid = student.id;
+    const stGrades = allGrades[sid] || {};
+    const itemKeys = [...new Set(Object.keys(stGrades)
+      .filter(k => k.startsWith('grade_') || k.startsWith('comment_'))
+      .map(k => k.replace(/^(grade|comment)_/, ''))
+    )].sort();
     
-    for (const ik of items) {
-      const g = gradesData[`grade_${examId}_${sid}_${ik}`] || '';
-      const c = gradesData[`comment_${examId}_${sid}_${ik}`] || '';
+    for (const ik of itemKeys) {
+      const g = stGrades[`grade_${ik}`] || '';
+      const c = stGrades[`comment_${ik}`] || '';
       if (g !== '' || c !== '') {
         const escCsv = s => '"' + String(s).replace(/"/g, '""') + '"';
         rows.push([escCsv(sid), escCsv(ik), escCsv(g), escCsv(c)].join(','));
@@ -269,13 +277,50 @@ function renderItem(it, q) {
   if (it.type === 'cloze')
     return `<div class="ans cloze">${sPart}<div class="ans-body"><span class="chip">${esc(it.selected)}</span></div>${renderSubGrading(it)}</div>`;
   if (it.type === 'asset') {
+    let html = '';
+    const snaps = it.data.snapshots || [];
+    if (snaps.length > 0) {
+      html = snaps.map((s, i) => {
+        const textHtml = esc(s.text || '').replace(/\n/g, '<br>');
+        let imgUrl = null;
+        if (q && q.stimulus && q.stimulus.galleries) {
+          const filename = s.src ? s.src.split('/').pop() : null;
+          if (filename) {
+            for (const gal of q.stimulus.galleries) {
+              const photo = gal.photos.find(p => p.name === filename);
+              if (photo) { imgUrl = photo.url; break; }
+            }
+          }
+        }
+        let imgHtml = '';
+        if (imgUrl) {
+          if (s.zoomRect) {
+            const zr = s.zoomRect;
+            const bgSize = `${100 / zr.width}% ${100 / zr.height}%`;
+            const bgPosX = `${(zr.offsetX / (1 - zr.width)) * 100 || 0}%`;
+            const bgPosY = `${(zr.offsetY / (1 - zr.height)) * 100 || 0}%`;
+            let aspect = 1;
+            if (s.width && s.height) { aspect = (zr.width * s.width) / (zr.height * s.height); }
+            imgHtml = `<div class="snap-crop" style="background-image:url(${imgUrl}); background-size:${bgSize}; background-position:${bgPosX} ${bgPosY}; aspect-ratio:${aspect};"></div>`;
+          } else {
+            imgHtml = `<img src="${imgUrl}" class="snap-crop" alt=""/>`;
+          }
+        }
+        return `<div class="snap-item">
+          ${imgHtml}
+          <div class="snap-text">
+            <div class="snap-label">תמונה ${i + 1}</div>
+            <p>${textHtml}</p>
+          </div>
+        </div>`;
+      }).join('');
     } else {
       html = '<div class="missing">לא צולמו תמונות ביישומון.</div>';
     }
-    return `<div class="ans asset"><div class="ans-tag">${esc(tag)}</div><div class="ans-body">
+    return `<div class="ans asset">${sPart}<div class="ans-body">
       <div style="margin-bottom:12px"><span class="chip">תשובת יישומון צילום</span></div>
       ${html}
-    </div></div>`;
+    </div>${renderSubGrading(it)}</div>`;
   }
   return '';
 }
@@ -311,8 +356,19 @@ function renderStudentPage(model) {
 }
 
 // ---------- views ----------
+function renderTopbar() {
+  if (!rootHandle) { $topbar.innerHTML = ''; return; }
+  $topbar.innerHTML = `<a class="backlink" href="#" id="home-link">→ החלפת תיקיית בחינות (${esc(rootHandle.name)})</a>`;
+  document.getElementById('home-link').onclick = (e) => {
+    e.preventDefault();
+    location.hash = '';
+    rootHandle = null;
+    showWelcome();
+  };
+}
 
 function showWelcome(lastName, errMsg) {
+  renderTopbar();
   $app.innerHTML = `
     <div class="welcome">
       <h1 dir="ltr">Open Teacher <em>Assessment</em></h1>
@@ -346,6 +402,7 @@ function showWelcome(lastName, errMsg) {
 }
 
 function showNav() {
+  renderTopbar();
   let summaryHtml = '';
   if (students.length > 0) {
     const m = students[0].meta;
@@ -390,7 +447,7 @@ function showNav() {
 async function showStudent(id) {
   const student = students.find(s => s.id === id);
   if (!student) { location.hash = ''; return; }
-  renderTopbar();
+  $topbar.innerHTML = ''; // Hide topbar when viewing a student
   $app.innerHTML = `<div class="spinner">טוען…</div>`;
   try {
     const model = await buildModel(student);
@@ -401,20 +458,20 @@ async function showStudent(id) {
     $app.querySelectorAll('.grade-input').forEach(inp => {
       inp.oninput = (e) => {
         const itemkey = e.target.dataset.itemkey;
-        setGradeData(`grade_${model.examId}_${student.id}_${itemkey}`, e.target.value);
+        setStudentGradeData(student.id, `grade_${itemkey}`, e.target.value);
       };
     });
     $app.querySelectorAll('.comment-input').forEach(inp => {
       inp.oninput = (e) => {
         const itemkey = e.target.dataset.itemkey;
-        setGradeData(`comment_${model.examId}_${student.id}_${itemkey}`, e.target.value);
+        setStudentGradeData(student.id, `comment_${itemkey}`, e.target.value);
       };
     });
     $app.querySelectorAll('.override-points').forEach(inp => {
       inp.oninput = (e) => {
         const itemkey = e.target.dataset.itemkey;
         const val = e.target.value !== '' ? parseInt(e.target.value, 10) : null;
-        setGradeData(`override_${model.examId}_${itemkey}`, val);
+        setStudentGradeData(student.id, `override_${itemkey}`, val);
         // update max on grade input
         const gInp = document.querySelector(`.grade-input[data-itemkey="${itemkey}"]`);
         if (gInp) gInp.setAttribute('max', val !== null ? val : 0);
@@ -437,9 +494,9 @@ async function ensurePermission(handle) {
 
 async function scanAndShow() {
   $app.innerHTML = `<div class="spinner">סורק תיקיות…</div>`;
-  await loadGrades();
   modelCache.clear();
   students = [];
+  allGrades = {};
   try {
     for await (const entry of rootHandle.values()) {
       if (entry.kind !== 'directory') continue;
@@ -447,6 +504,15 @@ async function scanAndShow() {
       if (!idx) continue;
       const html = await idx.text();
       students.push({ id: entry.name, dir: entry, html, meta: quickMeta(html) });
+      
+      // Load student grades
+      try {
+        const fh = await entry.getFileHandle('grades.json');
+        const file = await fh.getFile();
+        allGrades[entry.name] = JSON.parse(await file.text()) || {};
+      } catch (e) {
+        allGrades[entry.name] = {};
+      }
     }
   } catch (e) {
     showWelcome(rootHandle?.name, `לא ניתן לקרוא את התיקייה: ${e.message}`);
