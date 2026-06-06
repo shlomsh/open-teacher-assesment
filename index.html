@@ -132,11 +132,26 @@
               padding:24px 26px; margin-bottom:18px; box-shadow:var(--shadow);
               animation:rise .5s cubic-bezier(.2,.8,.2,1) both; }
   section.q h3 { display:flex; align-items:center; gap:13px; font-family:var(--display); font-weight:700;
-                 font-size:21px; color:var(--teal-deep); margin:0 0 16px; padding-bottom:14px;
-                 border-bottom:1px solid var(--line-soft); letter-spacing:-.01em; }
+                 font-size:21px; color:var(--teal-deep); margin:0; letter-spacing:-.01em; }
   .qbadge { flex:0 0 auto; width:38px; height:38px; display:grid; place-items:center; border-radius:50%;
             background:var(--surface-2); border:1.5px solid var(--gold); color:var(--gold);
             font-family:var(--display); font-weight:700; font-size:17px; }
+
+  .q-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--line-soft); }
+  .q-points { display:flex; align-items:center; gap:6px; font-weight:700; color:var(--teal); font-size:14px; background:var(--surface-2); padding:4px 10px; border-radius:8px; border:1px solid var(--line-soft); }
+  .override-points { width:44px; text-align:center; font:inherit; font-weight:700; color:var(--teal-deep); background:transparent; border:none; border-bottom:1px solid transparent; transition:border-color .2s; }
+  .override-points:focus { outline:none; border-bottom-color:var(--teal); }
+  .override-points::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  .override-points[type=number] { -moz-appearance:textfield; }
+
+  .grading-panel { margin-top:24px; padding-top:16px; border-top:1px dashed var(--line); }
+  .grading-head { font-size:13px; font-weight:800; color:var(--gold); letter-spacing:.15em; margin-bottom:10px; }
+  .grading-fields { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  .grading-grade, .grading-comment { display:flex; align-items:center; gap:8px; }
+  .grading-grade label, .grading-comment label { font-weight:700; font-size:14.5px; color:var(--ink-soft); }
+  .grade-input { width:60px; font:inherit; font-weight:700; font-size:15px; text-align:center; padding:6px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--teal-deep); transition:border-color .2s; }
+  .comment-input { flex:1; min-width:260px; max-width:400px; font:inherit; font-size:15px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); transition:border-color .2s; }
+  .grade-input:focus, .comment-input:focus { outline:none; border-color:var(--teal); box-shadow:0 0 0 3px var(--teal-tint); }
 
   .stimulus { margin:2px 0 18px; }
   .thumbs { display:flex; flex-wrap:wrap; gap:14px; }

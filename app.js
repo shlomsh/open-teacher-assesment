@@ -13,7 +13,7 @@ let rootHandle = null;          // chosen directory
 let students = [];              // [{id, dir, html, meta}]
 const modelCache = new Map();   // id -> rendered model (parsed once)
 
-// ---------- tiny IndexedDB (remember last folder handle) ----------
+// ---------- tiny IndexedDB (remember last folder handle & grading data) ----------
 function idb(mode, fn) {
   return new Promise((resolve, reject) => {
     const open = indexedDB.open('exam-viewer', 1);
@@ -29,6 +29,21 @@ function idb(mode, fn) {
 }
 const saveHandle = (h) => idb('readwrite', (s) => s.put(h, 'dir'));
 const loadHandle = () => idb('readonly', (s) => s.get('dir'));
+const saveKv = (key, val) => idb('readwrite', (s) => s.put(val, key));
+const loadKv = (key) => idb('readonly', (s) => s.get(key));
+const getAllKv = () => new Promise((resolve) => {
+  idb('readonly', s => {
+    const r1 = s.getAllKeys();
+    const r2 = s.getAll();
+    r1.onsuccess = () => {
+      r2.onsuccess = () => {
+        const obj = {};
+        for(let i=0; i<r1.result.length; i++) obj[r1.result[i]] = r2.result[i];
+        resolve(obj);
+      }
+    }
+  });
+});
 
 // ---------- file system helpers ----------
 async function getDir(handle, ...parts) {
@@ -96,7 +111,14 @@ function extractQuestions(doc) {
       .replace(/(&nbsp;|\s)+/g, ' ').trim();
 
     const num = (items.find(i => i.num != null) || {}).num ?? null;
-    questions.push({ pageid, num, title: titleByPageId[pageid] || null, promptHtml, items });
+    
+    let maxPoints = null;
+    const titleText = titleByPageId[pageid] || '';
+    const plainPrompt = promptHtml.replace(/<[^>]+>/g, ' ');
+    const pointsMatch = titleText.match(/(\d+)\s*(?:נקודות|נק'|נק\b)/) || plainPrompt.match(/(\d+)\s*(?:נקודות|נק'|נק\b)/);
+    if (pointsMatch) maxPoints = parseInt(pointsMatch[1], 10);
+
+    questions.push({ pageid, num, title: titleByPageId[pageid] || null, promptHtml, items, maxPoints });
   });
   questions.sort((a, b) => (a.num ?? 999) - (b.num ?? 999));
   return questions;
@@ -168,9 +190,60 @@ async function buildModel(student) {
   }
 
   const answered = [...new Set(questions.map(q => q.num).filter(n => n != null))].sort((a, b) => a - b);
-  const model = { id: student.id, meta: student.meta, answered, questions };
+  
+  // load grading data
+  const examId = rootHandle.name;
+  for (const q of questions) {
+    if (q.num == null) continue;
+    const override = await loadKv(`override_${examId}_${q.num}`);
+    q.overridePoints = override ?? null;
+    q.grade = await loadKv(`grade_${examId}_${student.id}_${q.num}`) || '';
+    q.comment = await loadKv(`comment_${examId}_${student.id}_${q.num}`) || '';
+  }
+
+  const model = { id: student.id, meta: student.meta, answered, questions, examId };
   modelCache.set(student.id, model);
   return model;
+}
+
+// ---------- export logic ----------
+async function exportCsv() {
+  if (!rootHandle) return;
+  const examId = rootHandle.name;
+  const data = await getAllKv();
+  let csv = '\\uFEFF"Student ID","Question","Grade","Comment"\\n';
+  const rows = [];
+  
+  const studentIds = new Set();
+  const qNums = new Set();
+  for (const [k, v] of Object.entries(data)) {
+    const mGrade = k.match(/^grade_(.+)_(.+)_(.+)$/);
+    if (mGrade && mGrade[1] === examId) { studentIds.add(mGrade[2]); qNums.add(mGrade[3]); }
+    const mComment = k.match(/^comment_(.+)_(.+)_(.+)$/);
+    if (mComment && mComment[1] === examId) { studentIds.add(mComment[2]); qNums.add(mComment[3]); }
+  }
+
+  for (const sid of [...studentIds].sort()) {
+    for (const qn of [...qNums].sort((a,b)=>a-b)) {
+      const g = data[`grade_${examId}_${sid}_${qn}`] || '';
+      const c = data[`comment_${examId}_${sid}_${qn}`] || '';
+      if (g !== '' || c !== '') {
+        const escCsv = s => '"' + String(s).replace(/"/g, '""') + '"';
+        rows.push([escCsv(sid), escCsv(qn), escCsv(g), escCsv(c)].join(','));
+      }
+    }
+  }
+
+  if (!rows.length) return alert('אין ציונים לייצא בתיקייה זו.');
+  
+  csv += rows.join('\\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `grades_${examId}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // ---------- rendering (ported from build.mjs) ----------
@@ -248,15 +321,37 @@ function renderItem(it, q) {
 }
 function renderStudentPage(model) {
   const m = model.meta || {};
+  const examId = model.examId;
   const qs = model.questions.map(q => {
     const title = (q.title || (q.num != null ? 'שאלה ' + q.num : 'שאלה')).replace(/^[\s–—-]+/, '');
+    const maxP = q.overridePoints ?? q.maxPoints;
     return `
-    <section class="q">
-      <h3><span class="qbadge">${esc(q.num ?? '✦')}</span><span>${esc(title)}</span></h3>
+    <section class="q" data-qnum="${q.num}">
+      <div class="q-header">
+        <h3><span class="qbadge">${esc(q.num ?? '✦')}</span><span>${esc(title)}</span></h3>
+        <div class="q-points" title="לחצו לעריכת הניקוד המרבי">
+          <input type="number" class="override-points" value="${maxP !== null ? maxP : ''}" placeholder="—" data-qnum="${q.num}" />
+          <label>נק'</label>
+        </div>
+      </div>
       ${renderStimulus(q.stimulus)}
       ${q.promptHtml ? `<details class="prompt" open><summary>השאלה</summary><div class="prompt-body">${q.promptHtml}</div></details>` : ''}
       <div class="answers-head">תשובות התלמיד</div>
       ${q.items.map(it => renderItem(it, q)).join('')}
+      
+      <div class="grading-panel">
+        <div class="grading-head">הערכת מורה</div>
+        <div class="grading-fields">
+          <div class="grading-grade">
+            <label>ציון:</label>
+            <input type="number" class="grade-input" data-qnum="${q.num}" value="${esc(q.grade)}" min="0" max="${maxP !== null ? maxP : ''}" placeholder="0" />
+          </div>
+          <div class="grading-comment">
+            <label>הערה:</label>
+            <input type="text" class="comment-input" data-qnum="${q.num}" value="${esc(q.comment)}" placeholder="פירוט ונימוק..." />
+          </div>
+        </div>
+      </div>
     </section>`;
   }).join('');
   return `
@@ -280,11 +375,13 @@ function renderTopbar() {
   $topbar.innerHTML = `<div class="row">
     <span class="title">Open Teacher Assessment</span>
     <span class="folder-name">📂 ${esc(rootHandle.name)}</span>
-    <button id="refresh" class="ghost small">רענון</button>
-    <button id="change" class="ghost small">החלפת תיקייה</button>
+    <button id="export-csv" class="ghost">ייצוא ציונים (CSV)</button>
+    <button id="refresh">רענון</button>
+    <button id="change">החלפת תיקייה</button>
   </div>`;
   document.getElementById('refresh').onclick = () => scanAndShow();
   document.getElementById('change').onclick = () => pickFolder();
+  document.getElementById('export-csv').onclick = () => exportCsv();
 }
 
 function showWelcome(lastName, errMsg) {
@@ -304,7 +401,7 @@ function showWelcome(lastName, errMsg) {
           <h3>📖 איך מתחילים?</h3>
           <ol>
             <li>ודאו שאתם משתמשים בדפדפן <strong>Chrome</strong> או <strong>Edge</strong>.</li>
-            <li>היכנסו למערכת ה-<strong>iTest</strong> (המערכת הישנה) והורידו את נתוני הבחינות.</li>
+            <li>היכנסו למערכת ה-<strong>iTest</strong> (המערכת הישנה) והורידו את נתוני הבחינות (או קבלו אותם מ<strong>אחראי התקשוב / טכנאי המחשבים</strong>).</li>
             <li>שמרו את הנתונים במחשב. יש לוודא שהנתונים חולצו כך ש<strong>לכל תלמיד יש תיקייה נפרדת</strong> (תעודת זהות).</li>
             <li>לחצו על הכפתור למעלה ובחרו את התיקייה הראשית שמכילה את תיקיות התלמידים.</li>
           </ol>
@@ -357,6 +454,34 @@ async function showStudent(id) {
     const model = await buildModel(student);
     $app.innerHTML = renderStudentPage(model);
     document.querySelector('.backlink').onclick = (e) => { e.preventDefault(); location.hash = ''; };
+    
+    // Bind grading inputs
+    $app.querySelectorAll('.grade-input').forEach(inp => {
+      inp.oninput = (e) => {
+        const qnum = e.target.dataset.qnum;
+        saveKv(`grade_${model.examId}_${student.id}_${qnum}`, e.target.value);
+        model.questions.find(q=>q.num == qnum).grade = e.target.value;
+      };
+    });
+    $app.querySelectorAll('.comment-input').forEach(inp => {
+      inp.oninput = (e) => {
+        const qnum = e.target.dataset.qnum;
+        saveKv(`comment_${model.examId}_${student.id}_${qnum}`, e.target.value);
+        model.questions.find(q=>q.num == qnum).comment = e.target.value;
+      };
+    });
+    $app.querySelectorAll('.override-points').forEach(inp => {
+      inp.oninput = (e) => {
+        const qnum = e.target.dataset.qnum;
+        const val = e.target.value !== '' ? parseInt(e.target.value, 10) : null;
+        saveKv(`override_${model.examId}_${qnum}`, val);
+        model.questions.find(q=>q.num == qnum).overridePoints = val;
+        // update max on grade input
+        const gInp = document.querySelector(`.grade-input[data-qnum="${qnum}"]`);
+        if (gInp) gInp.setAttribute('max', val !== null ? val : '');
+      };
+    });
+
     window.scrollTo(0, 0);
   } catch (e) {
     $app.innerHTML = `<a class="backlink" href="#">← חזרה</a><div class="err">שגיאה בטעינת התלמיד: ${esc(e.message)}</div>`;
