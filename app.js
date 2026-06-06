@@ -291,7 +291,7 @@ function showWelcome(lastName, errMsg) {
   renderTopbar();
   $app.innerHTML = `
     <div class="welcome">
-      <div class="kicker">מערכת צפייה בבחינות בגרות</div>
+      <div class="kicker">מערכת צפייה בבחינות הדמייה</div>
       <h1 dir="ltr">Open Teacher <em>Assessment</em></h1>
       
       <div class="info-box">
