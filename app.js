@@ -13,37 +13,45 @@ let rootHandle = null;          // chosen directory
 let students = [];              // [{id, dir, html, meta}]
 const modelCache = new Map();   // id -> rendered model (parsed once)
 
-// ---------- tiny IndexedDB (remember last folder handle & grading data) ----------
-function idb(mode, fn) {
-  return new Promise((resolve, reject) => {
-    const open = indexedDB.open('exam-viewer', 1);
-    open.onupgradeneeded = () => open.result.createObjectStore('kv');
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const tx = open.result.transaction('kv', mode);
-      const req = fn(tx.objectStore('kv'));
-      tx.oncomplete = () => resolve(req && req.result);
-      tx.onerror = () => reject(tx.error);
-    };
-  });
+// ---------- Portable Grading Storage ----------
+let gradesData = {};
+let gradesTimeout = null;
+
+async function loadGrades() {
+  if (!rootHandle) return;
+  try {
+    const fileHandle = await rootHandle.getFileHandle('grades.json', { create: false });
+    const file = await fileHandle.getFile();
+    const text = await file.text();
+    gradesData = JSON.parse(text) || {};
+  } catch (e) {
+    gradesData = {};
+  }
 }
-const saveHandle = (h) => idb('readwrite', (s) => s.put(h, 'dir'));
-const loadHandle = () => idb('readonly', (s) => s.get('dir'));
-const saveKv = (key, val) => idb('readwrite', (s) => s.put(val, key));
-const loadKv = (key) => idb('readonly', (s) => s.get(key));
-const getAllKv = () => new Promise((resolve) => {
-  idb('readonly', s => {
-    const r1 = s.getAllKeys();
-    const r2 = s.getAll();
-    r1.onsuccess = () => {
-      r2.onsuccess = () => {
-        const obj = {};
-        for(let i=0; i<r1.result.length; i++) obj[r1.result[i]] = r2.result[i];
-        resolve(obj);
-      }
-    }
-  });
-});
+
+async function saveGrades() {
+  if (!rootHandle) return;
+  try {
+    const fileHandle = await rootHandle.getFileHandle('grades.json', { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(gradesData, null, 2));
+    await writable.close();
+  } catch (e) {
+    console.error('Failed to save grades.json', e);
+  }
+}
+
+function setGradeData(key, val) {
+  if (val === null || val === '') delete gradesData[key];
+  else gradesData[key] = val;
+  
+  if (gradesTimeout) clearTimeout(gradesTimeout);
+  gradesTimeout = setTimeout(saveGrades, 1000);
+}
+
+function getGradeData(key) {
+  return gradesData[key];
+}
 
 // ---------- file system helpers ----------
 async function getDir(handle, ...parts) {
@@ -99,7 +107,7 @@ function extractQuestions(doc) {
     });
     page.querySelectorAll('select').forEach(sel => {
       const s = txt(sel.querySelector('option[selected]')); if (!s) return;
-      items.push({ type: 'cloze', selected: s });
+      items.push({ type: 'cloze', key: 'cloze_' + pageid, selected: s });
     });
     if (!items.length) return;
 
@@ -112,13 +120,7 @@ function extractQuestions(doc) {
 
     const num = (items.find(i => i.num != null) || {}).num ?? null;
     
-    let maxPoints = null;
-    const titleText = titleByPageId[pageid] || '';
-    const plainPrompt = promptHtml.replace(/<[^>]+>/g, ' ');
-    const pointsMatch = titleText.match(/(\d+)\s*(?:נקודות|נק'|נק\b)/) || plainPrompt.match(/(\d+)\s*(?:נקודות|נק'|נק\b)/);
-    if (pointsMatch) maxPoints = parseInt(pointsMatch[1], 10);
-
-    questions.push({ pageid, num, title: titleByPageId[pageid] || null, promptHtml, items, maxPoints });
+    questions.push({ pageid, num, title: titleByPageId[pageid] || null, promptHtml, items });
   });
   questions.sort((a, b) => (a.num ?? 999) - (b.num ?? 999));
   return questions;
@@ -169,39 +171,28 @@ async function buildModel(student) {
             const part = m[2] || null;
             const data = JSON.parse(valStr);
             const q = questions.find(qq => qq.num === num);
-            if (q) {
-              q.items.push({ type: 'asset', part, key, data });
-            }
+            if (q) q.items.push({ type: 'asset', part, key, data });
           }
         }
       }
     }
-  } catch (e) {
-    console.warn('Could not parse assets.js', e);
-  }
+  } catch (e) { console.warn('Could not parse assets.js', e); }
 
   for (const q of questions) {
     q.items.sort((a, b) => {
-      const pA = a.part || '';
-      const pB = b.part || '';
+      const pA = a.part || ''; const pB = b.part || '';
       if (pA !== pB) return pA.localeCompare(pB);
       return (a.slot || 0) - (b.slot || 0);
     });
+    for (const it of q.items) {
+      it.overridePoints = getGradeData(`override_${rootHandle.name}_${it.key}`) ?? null;
+      it.grade = getGradeData(`grade_${rootHandle.name}_${student.id}_${it.key}`) || '';
+      it.comment = getGradeData(`comment_${rootHandle.name}_${student.id}_${it.key}`) || '';
+    }
   }
 
   const answered = [...new Set(questions.map(q => q.num).filter(n => n != null))].sort((a, b) => a - b);
-  
-  // load grading data
-  const examId = rootHandle.name;
-  for (const q of questions) {
-    if (q.num == null) continue;
-    const override = await loadKv(`override_${examId}_${q.num}`);
-    q.overridePoints = override ?? null;
-    q.grade = await loadKv(`grade_${examId}_${student.id}_${q.num}`) || '';
-    q.comment = await loadKv(`comment_${examId}_${student.id}_${q.num}`) || '';
-  }
-
-  const model = { id: student.id, meta: student.meta, answered, questions, examId };
+  const model = { id: student.id, meta: student.meta, answered, questions, examId: rootHandle.name };
   modelCache.set(student.id, model);
   return model;
 }
@@ -210,105 +201,74 @@ async function buildModel(student) {
 async function exportCsv() {
   if (!rootHandle) return;
   const examId = rootHandle.name;
-  const data = await getAllKv();
-  let csv = '\\uFEFF"Student ID","Question","Grade","Comment"\\n';
+  let csv = '\uFEFF"Student ID","Item","Grade","Comment"\n';
   const rows = [];
+  const keys = Object.keys(gradesData).filter(k => k.startsWith(`grade_${examId}_`));
+  const studentIds = [...new Set(keys.map(k => k.split('_')[2]))].sort();
   
-  const studentIds = new Set();
-  const qNums = new Set();
-  for (const [k, v] of Object.entries(data)) {
-    const mGrade = k.match(/^grade_(.+)_(.+)_(.+)$/);
-    if (mGrade && mGrade[1] === examId) { studentIds.add(mGrade[2]); qNums.add(mGrade[3]); }
-    const mComment = k.match(/^comment_(.+)_(.+)_(.+)$/);
-    if (mComment && mComment[1] === examId) { studentIds.add(mComment[2]); qNums.add(mComment[3]); }
-  }
-
-  for (const sid of [...studentIds].sort()) {
-    for (const qn of [...qNums].sort((a,b)=>a-b)) {
-      const g = data[`grade_${examId}_${sid}_${qn}`] || '';
-      const c = data[`comment_${examId}_${sid}_${qn}`] || '';
+  for (const sid of studentIds) {
+    const items = [...new Set(Object.keys(gradesData)
+      .filter(k => k.includes(`_${sid}_`) && k.startsWith('grade_'))
+      .map(k => k.split('_').slice(3).join('_')))].sort();
+    
+    for (const ik of items) {
+      const g = gradesData[`grade_${examId}_${sid}_${ik}`] || '';
+      const c = gradesData[`comment_${examId}_${sid}_${ik}`] || '';
       if (g !== '' || c !== '') {
         const escCsv = s => '"' + String(s).replace(/"/g, '""') + '"';
-        rows.push([escCsv(sid), escCsv(qn), escCsv(g), escCsv(c)].join(','));
+        rows.push([escCsv(sid), escCsv(ik), escCsv(g), escCsv(c)].join(','));
       }
     }
   }
 
   if (!rows.length) return alert('אין ציונים לייצא בתיקייה זו.');
-  
-  csv += rows.join('\\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  csv += rows.join('\n');
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
   a.download = `grades_${examId}.csv`;
-  document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
 }
 
 // ---------- rendering (ported from build.mjs) ----------
 function renderStimulus(s) {
   if (!s) return '';
-  // Only use gallery photos if there are no main images (to prevent duplicates)
   let imgs = s.images || [];
-  if (imgs.length === 0) {
-    imgs = (s.galleries || []).flatMap(g => g.photos || []);
-  }
-  const tiles = imgs.map(im =>
-    `<a class="thumb" href="${im.url}" target="_blank" title="${esc(im.name)}"><img loading="lazy" src="${im.url}" alt=""></a>`).join('');
-  const tour = s.virtualTour
-    ? `<div class="missing">חומר הגירוי לשאלה זו הוא סיור וירטואלי (VirtualTour) שאינו כלול בייצוא — לא ניתן להצגה.</div>` : '';
+  if (imgs.length === 0) imgs = (s.galleries || []).flatMap(g => g.photos || []);
+  const tiles = imgs.map(im => `<a class="thumb" href="${im.url}" target="_blank" title="${esc(im.name)}"><img loading="lazy" src="${im.url}" alt=""></a>`).join('');
+  const tour = s.virtualTour ? `<div class="missing">סיור וירטואלי (VirtualTour) לא ניתן להצגה.</div>` : '';
   if (!tiles && !tour) return '';
   return `<div class="stimulus">${tiles ? `<div class="thumbs">${tiles}</div>` : ''}${tour}</div>`;
 }
+
+function renderSubGrading(it) {
+  const maxP = it.overridePoints !== null ? it.overridePoints : 0;
+  return `
+    <div class="grading-panel">
+      <div class="grading-fields">
+        <div class="q-points">
+          <label>ניקוד מרבי:</label>
+          <input type="number" class="override-points" value="${it.overridePoints ?? ''}" data-itemkey="${esc(it.key)}" />
+        </div>
+        <div class="grading-grade">
+          <label>ציון:</label>
+          <input type="number" class="grade-input" data-itemkey="${esc(it.key)}" value="${esc(it.grade)}" max="${maxP}" />
+        </div>
+        <div class="grading-comment">
+          <label>הערה:</label>
+          <input type="text" class="comment-input" data-itemkey="${esc(it.key)}" value="${esc(it.comment)}" />
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderItem(it, q) {
-  if (it.type === 'inplace') {
-    const tag = it.part ? `${PART[it.part] || it.part}${it.slot ? `(${it.slot})` : ''}` : (it.slot ?? '');
-    return `<div class="ans"><div class="ans-tag">${esc(tag)}</div><div class="ans-body">${it.answerHtml || esc(it.answerText)}</div></div>`;
-  }
+  const tag = it.part ? `${PART[it.part] || it.part}${it.slot ? `(${it.slot})` : ''}` : (it.slot ?? '');
+  const sPart = `<div class="ans-tag">${esc(tag)}</div>`;
+  if (it.type === 'inplace')
+    return `<div class="ans">${sPart}<div class="ans-body">${it.answerHtml || esc(it.answerText)}</div>${renderSubGrading(it)}</div>`;
   if (it.type === 'cloze')
-    return `<div class="ans cloze"><div class="ans-tag">▾</div><div class="ans-body"><span class="chip">${esc(it.selected)}</span></div></div>`;
+    return `<div class="ans cloze">${sPart}<div class="ans-body"><span class="chip">${esc(it.selected)}</span></div>${renderSubGrading(it)}</div>`;
   if (it.type === 'asset') {
-    const tag = it.part ? `${PART[it.part] || it.part}${it.slot ? `(${it.slot})` : ''}` : (it.slot ?? '');
-    let html = '';
-    const snaps = it.data.snapshots || [];
-    if (snaps.length > 0) {
-      html = snaps.map((s, i) => {
-        const textHtml = esc(s.text || '').replace(/\n/g, '<br>');
-        let imgUrl = null;
-        if (q && q.stimulus && q.stimulus.galleries) {
-          const filename = s.src ? s.src.split('/').pop() : null;
-          if (filename) {
-            for (const gal of q.stimulus.galleries) {
-              const photo = gal.photos.find(p => p.name === filename);
-              if (photo) { imgUrl = photo.url; break; }
-            }
-          }
-        }
-        let imgHtml = '';
-        if (imgUrl) {
-          if (s.zoomRect) {
-            const zr = s.zoomRect;
-            const bgSize = `${100 / zr.width}% ${100 / zr.height}%`;
-            const bgPosX = `${(zr.offsetX / (1 - zr.width)) * 100 || 0}%`;
-            const bgPosY = `${(zr.offsetY / (1 - zr.height)) * 100 || 0}%`;
-            let aspect = 1;
-            if (s.width && s.height) {
-              aspect = (zr.width * s.width) / (zr.height * s.height);
-            }
-            imgHtml = `<div class="snap-crop" style="background-image:url(${imgUrl}); background-size:${bgSize}; background-position:${bgPosX} ${bgPosY}; aspect-ratio:${aspect};"></div>`;
-          } else {
-            imgHtml = `<img src="${imgUrl}" class="snap-crop" alt=""/>`;
-          }
-        }
-        return `<div class="snap-item">
-          ${imgHtml}
-          <div class="snap-text">
-            <div class="snap-label">תמונה ${i + 1}</div>
-            <p>${textHtml}</p>
-          </div>
-        </div>`;
-      }).join('');
     } else {
       html = '<div class="missing">לא צולמו תמונות ביישומון.</div>';
     }
@@ -324,34 +284,15 @@ function renderStudentPage(model) {
   const examId = model.examId;
   const qs = model.questions.map(q => {
     const title = (q.title || (q.num != null ? 'שאלה ' + q.num : 'שאלה')).replace(/^[\s–—-]+/, '');
-    const maxP = q.overridePoints ?? q.maxPoints;
     return `
     <section class="q" data-qnum="${q.num}">
       <div class="q-header">
         <h3><span class="qbadge">${esc(q.num ?? '✦')}</span><span>${esc(title)}</span></h3>
-        <div class="q-points" title="לחצו לעריכת הניקוד המרבי">
-          <input type="number" class="override-points" value="${maxP !== null ? maxP : ''}" placeholder="—" data-qnum="${q.num}" />
-          <label>נק'</label>
-        </div>
       </div>
       ${renderStimulus(q.stimulus)}
       ${q.promptHtml ? `<details class="prompt" open><summary>השאלה</summary><div class="prompt-body">${q.promptHtml}</div></details>` : ''}
       <div class="answers-head">תשובות התלמיד</div>
       ${q.items.map(it => renderItem(it, q)).join('')}
-      
-      <div class="grading-panel">
-        <div class="grading-head">הערכת מורה</div>
-        <div class="grading-fields">
-          <div class="grading-grade">
-            <label>ציון:</label>
-            <input type="number" class="grade-input" data-qnum="${q.num}" value="${esc(q.grade)}" min="0" max="${maxP !== null ? maxP : ''}" placeholder="0" />
-          </div>
-          <div class="grading-comment">
-            <label>הערה:</label>
-            <input type="text" class="comment-input" data-qnum="${q.num}" value="${esc(q.comment)}" placeholder="פירוט ונימוק..." />
-          </div>
-        </div>
-      </div>
     </section>`;
   }).join('');
   return `
@@ -370,22 +311,8 @@ function renderStudentPage(model) {
 }
 
 // ---------- views ----------
-function renderTopbar() {
-  if (!rootHandle) { $topbar.innerHTML = ''; return; }
-  $topbar.innerHTML = `<div class="row">
-    <span class="title">Open Teacher Assessment</span>
-    <span class="folder-name">📂 ${esc(rootHandle.name)}</span>
-    <button id="export-csv" class="ghost">ייצוא ציונים (CSV)</button>
-    <button id="refresh">רענון</button>
-    <button id="change">החלפת תיקייה</button>
-  </div>`;
-  document.getElementById('refresh').onclick = () => scanAndShow();
-  document.getElementById('change').onclick = () => pickFolder();
-  document.getElementById('export-csv').onclick = () => exportCsv();
-}
 
 function showWelcome(lastName, errMsg) {
-  renderTopbar();
   $app.innerHTML = `
     <div class="welcome">
       <h1 dir="ltr">Open Teacher <em>Assessment</em></h1>
@@ -419,12 +346,22 @@ function showWelcome(lastName, errMsg) {
 }
 
 function showNav() {
-  renderTopbar();
-  let commonMeta = '';
+  let summaryHtml = '';
   if (students.length > 0) {
     const m = students[0].meta;
-    if (m?.code || m?.term) {
-      commonMeta = ` · ${esc(m.code ? 'שאלון ' + m.code : '')} ${esc(m.term || '')}`.trim();
+    if (m?.code || m?.term || m?.type) {
+      summaryHtml = `
+      <div class="exam-summary">
+        <div class="summary-item"><span class="val">${students.length}</span><span class="lbl">תלמידים</span></div>
+        <div class="summary-sep"></div>
+        <div class="summary-item">
+          <span class="lbl">שאלון</span><span class="val">${esc(m.code || '—')}</span>
+        </div>
+        <div class="summary-sep"></div>
+        <div class="summary-item highlight">
+          <span class="val">${esc(m.type || '')} ${esc(m.term || '')}</span>
+        </div>
+      </div>`;
     }
   }
 
@@ -438,11 +375,16 @@ function showNav() {
   
   $app.innerHTML = `
     <div class="page-head">
-      <div class="kicker">תיקיית הבחינות</div>
       <h1 class="page-h">בחינות תלמידים</h1>
-      <p class="lede">${students.length} תלמידים${commonMeta} · לחצו על תלמיד לצפייה.</p>
+      ${summaryHtml}
+      <div style="margin-top:20px; animation:rise .6s cubic-bezier(.2,.8,.2,1) both; animation-delay:.1s;">
+        <button id="export-csv" class="primary" style="padding:10px 24px; border-radius:12px; font-size:15px; box-shadow:0 4px 12px rgba(13,66,61,.15);">📥 ייצוא ציונים לאקסל (CSV)</button>
+      </div>
     </div>
+    <div class="grid-header" style="font-size:13px; font-weight:700; color:var(--faint); margin:0 0 12px; letter-spacing:.05em;">בחירת תלמיד להערכה</div>
     <div class="grid">${cards || '<div class="empty">לא נמצאו תיקיות תלמידים עם <code>standalone_open</code> בתיקייה שנבחרה.</div>'}</div>`;
+    
+  document.getElementById('export-csv').onclick = () => exportCsv();
 }
 
 async function showStudent(id) {
@@ -458,27 +400,24 @@ async function showStudent(id) {
     // Bind grading inputs
     $app.querySelectorAll('.grade-input').forEach(inp => {
       inp.oninput = (e) => {
-        const qnum = e.target.dataset.qnum;
-        saveKv(`grade_${model.examId}_${student.id}_${qnum}`, e.target.value);
-        model.questions.find(q=>q.num == qnum).grade = e.target.value;
+        const itemkey = e.target.dataset.itemkey;
+        setGradeData(`grade_${model.examId}_${student.id}_${itemkey}`, e.target.value);
       };
     });
     $app.querySelectorAll('.comment-input').forEach(inp => {
       inp.oninput = (e) => {
-        const qnum = e.target.dataset.qnum;
-        saveKv(`comment_${model.examId}_${student.id}_${qnum}`, e.target.value);
-        model.questions.find(q=>q.num == qnum).comment = e.target.value;
+        const itemkey = e.target.dataset.itemkey;
+        setGradeData(`comment_${model.examId}_${student.id}_${itemkey}`, e.target.value);
       };
     });
     $app.querySelectorAll('.override-points').forEach(inp => {
       inp.oninput = (e) => {
-        const qnum = e.target.dataset.qnum;
+        const itemkey = e.target.dataset.itemkey;
         const val = e.target.value !== '' ? parseInt(e.target.value, 10) : null;
-        saveKv(`override_${model.examId}_${qnum}`, val);
-        model.questions.find(q=>q.num == qnum).overridePoints = val;
+        setGradeData(`override_${model.examId}_${itemkey}`, val);
         // update max on grade input
-        const gInp = document.querySelector(`.grade-input[data-qnum="${qnum}"]`);
-        if (gInp) gInp.setAttribute('max', val !== null ? val : '');
+        const gInp = document.querySelector(`.grade-input[data-itemkey="${itemkey}"]`);
+        if (gInp) gInp.setAttribute('max', val !== null ? val : 0);
       };
     });
 
@@ -491,13 +430,14 @@ async function showStudent(id) {
 
 // ---------- flow ----------
 async function ensurePermission(handle) {
-  const opts = { mode: 'read' };
+  const opts = { mode: 'readwrite' };
   if (await handle.queryPermission(opts) === 'granted') return true;
   return (await handle.requestPermission(opts)) === 'granted';
 }
 
 async function scanAndShow() {
   $app.innerHTML = `<div class="spinner">סורק תיקיות…</div>`;
+  await loadGrades();
   modelCache.clear();
   students = [];
   try {
@@ -522,7 +462,7 @@ async function pickFolder() {
     return;
   }
   try {
-    rootHandle = await window.showDirectoryPicker({ id: 'exam-data', mode: 'read' });
+    rootHandle = await window.showDirectoryPicker({ id: 'exam-data', mode: 'readwrite' });
   } catch (e) {
     if (e.name === 'AbortError') return; // user cancelled
     showWelcome(null, e.message); return;
