@@ -362,7 +362,7 @@ function renderStudentPage(model) {
 // ---------- views ----------
 function renderTopbar() {
   if (!rootHandle) { $topbar.innerHTML = ''; return; }
-  $topbar.innerHTML = `<a class="backlink" href="#" id="home-link">→ החלפת תיקיית בחינות (${esc(rootHandle.name)})</a>`;
+  $topbar.innerHTML = `<a class="backlink" href="#" id="home-link" style="margin-bottom:16px; display:inline-block;">→ חזרה למסך הראשי</a>`;
   document.getElementById('home-link').onclick = (e) => {
     e.preventDefault();
     location.hash = '';
@@ -438,14 +438,16 @@ function showNav() {
     <div class="page-head">
       <h1 class="page-h">בחינות תלמידים</h1>
       ${summaryHtml}
-      <div style="margin-top:20px; animation:rise .6s cubic-bezier(.2,.8,.2,1) both; animation-delay:.1s;">
+      <div style="margin-top:20px; animation:rise .6s cubic-bezier(.2,.8,.2,1) both; display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap;">
         <button id="export-csv" class="primary" style="padding:10px 24px; border-radius:12px; font-size:15px; box-shadow:0 4px 12px rgba(13,66,61,.15);">📥 ייצוא ציונים לאקסל (CSV)</button>
+        <button id="change-folder" class="ghost" style="padding:10px 20px; border-radius:12px; font-size:14px; border-color:transparent;">החלפת תיקייה</button>
       </div>
     </div>
     <div class="grid-header" style="font-size:13px; font-weight:700; color:var(--faint); margin:0 0 12px; letter-spacing:.05em;">בחירת תלמיד להערכה</div>
     <div class="grid">${cards || '<div class="empty">לא נמצאו תיקיות תלמידים עם <code>standalone_open</code> בתיקייה שנבחרה.</div>'}</div>`;
     
   document.getElementById('export-csv').onclick = () => exportCsv();
+  document.getElementById('change-folder').onclick = () => pickFolder();
 }
 
 async function showStudent(id) {

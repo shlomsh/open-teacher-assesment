@@ -152,20 +152,20 @@
   .q-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--line-soft); }
   
   /* teacher pen margin styling */
-  .ans-wrapper { display:grid; grid-template-columns:100px 1fr; gap:20px; align-items:start; margin-bottom:12px; }
-  .teacher-pen { display:flex; flex-direction:column; gap:8px; padding-top:4px; }
+  .ans-wrapper { position:relative; margin-bottom:16px; }
+  .teacher-pen { position:absolute; right:-140px; top:50%; transform:translateY(-50%); width:100px; display:flex; flex-direction:column; gap:8px; z-index:10; }
   .teacher-pen input { background:transparent; border:none; color:#d93025; font-weight:700; width:100%; transition:all .2s; }
   .teacher-pen input:focus { outline:none; background:rgba(217,48,37,0.05); border-radius:4px; }
   .teacher-pen input::placeholder { color:rgba(217,48,37,0.4); font-weight:500; }
   .pen-grade input { font-family:var(--display); font-size:26px; border-bottom:2px dashed rgba(217,48,37,0.3); text-align:center; padding:0 4px 4px; }
-  .pen-comment input { font-family:inherit; font-size:14px; border-bottom:1px dashed rgba(217,48,37,0.3); padding:4px; }
+  .pen-comment input { font-family:inherit; font-size:14px; border-bottom:1px dashed rgba(217,48,37,0.3); padding:4px; text-align:center; }
 
-  @media (max-width:650px) {
-    .ans-wrapper { grid-template-columns:1fr; gap:8px; }
-    .teacher-pen { flex-direction:row; align-items:center; background:rgba(217,48,37,0.03); padding:8px 12px; border-radius:8px; margin-bottom:8px; border:1px solid rgba(217,48,37,0.1); }
+  @media (max-width:1100px) {
+    .ans-wrapper { display:flex; flex-direction:column; gap:8px; }
+    .teacher-pen { position:static; transform:none; width:100%; flex-direction:row; align-items:center; background:rgba(217,48,37,0.03); padding:8px 12px; border-radius:8px; margin-bottom:8px; border:1px solid rgba(217,48,37,0.1); }
     .pen-grade input { width:60px; font-size:20px; border-bottom:none; text-align:start; }
     .pen-comment { flex:1; }
-    .pen-comment input { border-bottom:none; }
+    .pen-comment input { border-bottom:none; text-align:start; }
   }
 
 
