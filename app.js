@@ -160,18 +160,22 @@ function renderItem(it) {
 }
 function renderStudentPage(model) {
   const m = model.meta || {};
-  const qs = model.questions.map(q => `
+  const qs = model.questions.map(q => {
+    const title = (q.title || (q.num != null ? 'שאלה ' + q.num : 'שאלה')).replace(/^[\s–—-]+/, '');
+    return `
     <section class="q">
-      <h3>${esc(q.title || (q.num != null ? 'שאלה ' + q.num : 'שאלה'))}</h3>
+      <h3><span class="qbadge">${esc(q.num ?? '✦')}</span><span>${esc(title)}</span></h3>
       ${renderStimulus(q.stimulus)}
       ${q.promptHtml ? `<details class="prompt" open><summary>השאלה</summary><div class="prompt-body">${q.promptHtml}</div></details>` : ''}
       <div class="answers-head">תשובות התלמיד</div>
       ${q.items.map(renderItem).join('')}
-    </section>`).join('');
+    </section>`;
+  }).join('');
   return `
-    <a class="backlink" href="#">← חזרה לרשימת התלמידים</a>
+    <a class="backlink" href="#">→ חזרה לרשימת התלמידים</a>
     <header class="exam">
-      <h2>תשובות תלמיד · ${esc(model.id)}</h2>
+      <div class="label kicker">תיק בחינה</div>
+      <h2>תלמיד/ה · ${esc(model.id)}</h2>
       <div class="meta">
         ${m.type ? `<span><b>סוג:</b> ${esc(m.type)}</span>` : ''}
         ${m.term ? `<span><b>מועד:</b> ${esc(m.term)}</span>` : ''}
@@ -199,9 +203,10 @@ function showWelcome(lastName, errMsg) {
   renderTopbar();
   $app.innerHTML = `
     <div class="welcome">
-      <h1>צפייה בבחינות תלמידים</h1>
+      <div class="kicker">מערכת צפייה בבחינות בגרות</div>
+      <h1>צפייה בתשובות <em>תלמידים</em></h1>
       <p>בחרו את התיקייה שמכילה את תיקיות התלמידים (כל תת-תיקייה נקראת לפי מספר תעודת הזהות של התלמיד). הקבצים נקראים מקומית במחשב שלכם בלבד — שום מידע אינו נשלח לרשת.</p>
-      ${lastName ? `<button class="primary big" id="resume">פתיחת התיקייה האחרונה · ${esc(lastName)}</button><div><button id="pick" style="margin-top:12px">בחירת תיקייה אחרת</button></div>`
+      ${lastName ? `<div><button class="primary big" id="resume">פתיחת התיקייה האחרונה · ${esc(lastName)}</button></div><div><button class="ghost" id="pick">בחירת תיקייה אחרת</button></div>`
                  : `<button class="primary big" id="pick">בחירת תיקייה…</button>`}
       ${errMsg ? `<div class="err">${esc(errMsg)}</div>` : ''}
       <div class="hint">דרוש דפדפן Chrome או Edge.</div>
@@ -214,14 +219,18 @@ function showNav() {
   renderTopbar();
   const cards = students.map(s => `
     <a class="card" href="#${encodeURIComponent(s.id)}">
+      <div class="label">תלמיד/ה</div>
       <div class="sid">${esc(s.id)}</div>
       <div class="sub">${esc(s.meta?.code ? 'שאלון ' + s.meta.code : '')} ${esc(s.meta?.term || '')}</div>
       <div class="go">צפייה בתשובות ←</div>
     </a>`).join('');
   $app.innerHTML = `
-    <h1 class="page-h">בחינות תלמידים</h1>
-    <p class="lede">${students.length} תלמידים · לחצו על תלמיד כדי לראות את השאלות, התמונות והתשובות.</p>
-    <div class="grid">${cards || '<p>לא נמצאו תיקיות תלמידים עם <code>standalone_open</code> בתיקייה שנבחרה.</p>'}</div>`;
+    <div class="page-head">
+      <div class="kicker">תיקיית הבחינות</div>
+      <h1 class="page-h">בחינות תלמידים</h1>
+      <p class="lede">${students.length} תלמידים · לחצו על תלמיד כדי לראות את השאלות, התמונות והתשובות.</p>
+    </div>
+    <div class="grid">${cards || '<div class="empty">לא נמצאו תיקיות תלמידים עם <code>standalone_open</code> בתיקייה שנבחרה.</div>'}</div>`;
 }
 
 async function showStudent(id) {
