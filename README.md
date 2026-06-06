@@ -23,17 +23,22 @@ Requires Chrome or Edge (the folder-picker API isn't in Safari/Firefox).
 
 ## Deploy (Vercel)
 
-Zero-config static site. Connect this repo to Vercel and it serves `index.html` from
-the root — every push to the default branch auto-deploys.
+Zero-config static site. The project is on Vercel as **open-teacher-assesment**
+(team `shlomi-shemeshs-projects`) → https://open-teacher-assesment.vercel.app
+
+Two one-time settings in the Vercel dashboard make it usable by teachers:
+
+1. **Make it public** — Project → **Settings → Deployment Protection** → set
+   *Vercel Authentication* to **Disabled** (otherwise visitors hit a Vercel login wall).
+2. **Enable auto-deploy** — Project → **Settings → Git → Connect Git Repository** →
+   authorize the Vercel GitHub App for `shlomsh/open-teacher-assesment`. After that,
+   every push to `main` redeploys automatically.
+
+Manual deploy from the CLI (already linked):
 
 ```sh
-# one-time, if using the CLI:
-vercel            # link the project
-vercel --prod     # deploy
+vercel --prod --scope shlomi-shemeshs-projects
 ```
-
-Or import the GitHub repo at vercel.com → it detects a static site (no build) and
-gives you a URL. Share that URL with teachers.
 
 ## Local development
 
