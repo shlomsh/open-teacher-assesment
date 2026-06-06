@@ -1,0 +1,15 @@
+# dependencies / tooling
+node_modules/
+.vercel/
+
+# OS / editor
+.DS_Store
+*.log
+
+# Claude Code local memory & settings
+.claude/
+
+# Exam data must NEVER be committed (student PII, large). Keep it outside the repo.
+מבחן הדמיה/
+*/standalone_open/
+data/
