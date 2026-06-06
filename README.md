@@ -1,11 +1,21 @@
 # Open Teacher Assessment — Exam Viewer
 
-A static web app that lets a teacher open a folder of student exam exports and view
-every student's exam — **questions, artwork/diagrams, and answers** — in a clean,
-modern, RTL layout. It replaces the legacy Windows-only **iTest** grading client.
+My wife is an art teacher. For years she was stuck grading exams in a clunky,
+Windows-only legacy app with dated UX — and we've been a Mac-only household for ages,
+so every grading season meant borrowing or wrestling with a Windows machine. So I
+decided to polish my vibe-coding skills, build her something better, and open-source it
+for any teacher in the same spot.
 
-Everything runs **in the browser**. Student files are read locally via the
-File System Access API and **never uploaded**; only this app's code is hosted.
+It's a static web app that lets a teacher open a folder of student exam exports and view
+every student's exam — **questions, artwork/diagrams, and answers** — in a clean,
+modern, RTL layout. It replaces the legacy Windows-only **iTest** grading client and
+runs on any OS, in the browser.
+
+There's also a tiny, optional Vercel-hosted version so a teacher can just open a link —
+no install. **It is built with security and student PII in mind: neither the
+open-source code nor the Vercel deployment ever stores or receives any data.** Student
+files are read locally via the File System Access API and **never uploaded**; only the
+app's code is hosted.
 
 - `index.html` — markup + styles
 - `app.js` — folder picker, parsing, and rendering (no dependencies, no build step)
