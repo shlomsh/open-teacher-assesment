@@ -21,24 +21,17 @@ File System Access API and **never uploaded**; only this app's code is hosted.
 
 Requires Chrome or Edge (the folder-picker API isn't in Safari/Firefox).
 
-## Deploy (Vercel)
+## Deploy
 
-Zero-config static site. The project is on Vercel as **open-teacher-assesment**
-(team `shlomi-shemeshs-projects`) → https://open-teacher-assesment.vercel.app
+This is a zero-config static site — `index.html` and `app.js` with no build step — so
+any static host works (Vercel, Netlify, GitHub Pages, Cloudflare Pages, or your own
+web server). Just serve the repo root over HTTPS.
 
-Two one-time settings in the Vercel dashboard make it usable by teachers:
+The only requirement is a **secure context (HTTPS)**, which the File System Access API
+needs to work.
 
-1. **Make it public** — Project → **Settings → Deployment Protection** → set
-   *Vercel Authentication* to **Disabled** (otherwise visitors hit a Vercel login wall).
-2. **Enable auto-deploy** — Project → **Settings → Git → Connect Git Repository** →
-   authorize the Vercel GitHub App for `shlomsh/open-teacher-assesment`. After that,
-   every push to `main` redeploys automatically.
-
-Manual deploy from the CLI (already linked):
-
-```sh
-vercel --prod --scope shlomi-shemeshs-projects
-```
+If you use a host that gates deployments behind authentication, make the site public so
+teachers can reach it without a login wall.
 
 ## Local development
 
