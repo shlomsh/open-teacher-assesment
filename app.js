@@ -254,7 +254,7 @@ function renderSubGrading(it) {
         <input type="text" class="grade-input" data-itemkey="${esc(it.key)}" value="${esc(it.grade)}" placeholder="ציון" />
       </div>
       <div class="pen-comment">
-        <input type="text" class="comment-input" data-itemkey="${esc(it.key)}" value="${esc(it.comment)}" placeholder="הערה..." />
+        <textarea class="comment-input" data-itemkey="${esc(it.key)}" placeholder="הערה...">${esc(it.comment)}</textarea>
       </div>
     </div>`;
 }
@@ -362,25 +362,29 @@ function renderStudentPage(model) {
 // ---------- views ----------
 function renderTopbar() {
   if (!rootHandle) { $topbar.innerHTML = ''; return; }
-  $topbar.innerHTML = `<a class="backlink" href="#" id="home-link" style="margin-bottom:16px; display:inline-block;">→ חזרה למסך הראשי</a>`;
-  document.getElementById('home-link').onclick = (e) => {
-    e.preventDefault();
-    location.hash = '';
-    rootHandle = null;
-    showWelcome();
-  };
+  $topbar.innerHTML = `<a class="backlink" href="#welcome" id="home-link" style="margin-bottom:16px; display:inline-block;">→ חזרה למסך הראשי</a>`;
 }
 
 function showWelcome(lastName, errMsg) {
-  renderTopbar();
+  $topbar.innerHTML = '';
+  
+  const currentName = rootHandle ? rootHandle.name : lastName;
+  let buttonsHtml = '';
+  if (rootHandle) {
+    buttonsHtml = `<button class="primary big" id="resume-current">המשך בתיקייה הנוכחית · ${esc(currentName)}</button><button class="ghost" id="pick">פתיחת תיקייה חדשה</button>`;
+  } else if (lastName) {
+    buttonsHtml = `<button class="primary big" id="resume">פתיחת התיקייה האחרונה · ${esc(lastName)}</button><button class="ghost" id="pick">בחירת תיקייה אחרת</button>`;
+  } else {
+    buttonsHtml = `<button class="primary big" id="pick">בחירת תיקייה להתחלה…</button>`;
+  }
+
   $app.innerHTML = `
     <div class="welcome">
       <h1 dir="ltr">Open Teacher <em>Assessment</em></h1>
       <div class="hero-subtitle">מערכת פשוטה ומאובטחת לצפייה בבחינות הדמייה ובדיקתן באופן מקומי.</div>
       
       <div class="cta-group">
-        ${lastName ? `<button class="primary big" id="resume">פתיחת התיקייה האחרונה · ${esc(lastName)}</button><button class="ghost" id="pick">בחירת תיקייה אחרת</button>`
-                   : `<button class="primary big" id="pick">בחירת תיקייה להתחלה…</button>`}
+        ${buttonsHtml}
       </div>
 
       <div class="welcome-footer">
@@ -401,8 +405,10 @@ function showWelcome(lastName, errMsg) {
       
       ${errMsg ? `<div class="err">${esc(errMsg)}</div>` : ''}
     </div>`;
-  const pick = document.getElementById('pick'); if (pick) pick.onclick = () => pickFolder();
-  const resume = document.getElementById('resume'); if (resume) resume.onclick = () => resumeFolder();
+
+  const pickBtn = document.getElementById('pick'); if (pickBtn) pickBtn.onclick = () => pickFolder();
+  const resumeBtn = document.getElementById('resume'); if (resumeBtn) resumeBtn.onclick = () => resumeFolder();
+  const resumeCurBtn = document.getElementById('resume-current'); if (resumeCurBtn) resumeCurBtn.onclick = () => { location.hash = ''; };
 }
 
 function showNav() {
@@ -438,16 +444,9 @@ function showNav() {
     <div class="page-head">
       <h1 class="page-h">בחינות תלמידים</h1>
       ${summaryHtml}
-      <div style="margin-top:20px; animation:rise .6s cubic-bezier(.2,.8,.2,1) both; display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap;">
-        <button id="export-csv" class="primary" style="padding:10px 24px; border-radius:12px; font-size:15px; box-shadow:0 4px 12px rgba(13,66,61,.15);">📥 ייצוא ציונים לאקסל (CSV)</button>
-        <button id="change-folder" class="ghost" style="padding:10px 20px; border-radius:12px; font-size:14px; border-color:transparent;">החלפת תיקייה</button>
-      </div>
     </div>
     <div class="grid-header" style="font-size:13px; font-weight:700; color:var(--faint); margin:0 0 12px; letter-spacing:.05em;">בחירת תלמיד להערכה</div>
     <div class="grid">${cards || '<div class="empty">לא נמצאו תיקיות תלמידים עם <code>standalone_open</code> בתיקייה שנבחרה.</div>'}</div>`;
-    
-  document.getElementById('export-csv').onclick = () => exportCsv();
-  document.getElementById('change-folder').onclick = () => pickFolder();
 }
 
 async function showStudent(id) {
@@ -543,8 +542,14 @@ async function resumeFolder() {
 }
 
 async function route() {
-  if (!rootHandle) return;
   const id = decodeURIComponent(location.hash.replace(/^#/, ''));
+  if (id === 'welcome' || (!rootHandle && !id)) {
+    const lastName = await loadHandle().then(h => h ? h.name : null).catch(() => null);
+    showWelcome(lastName);
+    return;
+  }
+  if (!rootHandle) return;
+
   if (id) {
     showStudent(id); 
   } else {
