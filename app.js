@@ -132,6 +132,41 @@ async function buildModel(student) {
   const stdHandle = await getDir(student.dir, 'standalone_open');
   const questions = extractQuestions(doc);
   for (const q of questions) q.stimulus = await stimulusFor(stdHandle, q.num, student.html);
+
+  try {
+    const assetsJs = await getFile(stdHandle, 'answers', 'assets', 'assets.js');
+    if (assetsJs) {
+      const text = await assetsJs.text();
+      const match = text.match(/window\.assetsData\s*=\s*(\{.*\});/s);
+      if (match) {
+        const assetsData = JSON.parse(match[1]);
+        for (const [key, valStr] of Object.entries(assetsData)) {
+          const m = key.match(/^q0*(\d+)([a-z])?_asset$/i);
+          if (m) {
+            const num = +m[1];
+            const part = m[2] || null;
+            const data = JSON.parse(valStr);
+            const q = questions.find(qq => qq.num === num);
+            if (q) {
+              q.items.push({ type: 'asset', part, key, data });
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Could not parse assets.js', e);
+  }
+
+  for (const q of questions) {
+    q.items.sort((a, b) => {
+      const pA = a.part || '';
+      const pB = b.part || '';
+      if (pA !== pB) return pA.localeCompare(pB);
+      return (a.slot || 0) - (b.slot || 0);
+    });
+  }
+
   const answered = [...new Set(questions.map(q => q.num).filter(n => n != null))].sort((a, b) => a - b);
   const model = { id: student.id, meta: student.meta, answered, questions };
   modelCache.set(student.id, model);
@@ -149,13 +184,62 @@ function renderStimulus(s) {
   if (!tiles && !tour) return '';
   return `<div class="stimulus">${tiles ? `<div class="thumbs">${tiles}</div>` : ''}${tour}</div>`;
 }
-function renderItem(it) {
+function renderItem(it, q) {
   if (it.type === 'inplace') {
     const tag = it.part ? `${PART[it.part] || it.part}${it.slot ? `(${it.slot})` : ''}` : (it.slot ?? '');
     return `<div class="ans"><div class="ans-tag">${esc(tag)}</div><div class="ans-body">${it.answerHtml || esc(it.answerText)}</div></div>`;
   }
   if (it.type === 'cloze')
     return `<div class="ans cloze"><div class="ans-tag">▾</div><div class="ans-body"><span class="chip">${esc(it.selected)}</span></div></div>`;
+  if (it.type === 'asset') {
+    const tag = it.part ? `${PART[it.part] || it.part}${it.slot ? `(${it.slot})` : ''}` : (it.slot ?? '');
+    let html = '';
+    const snaps = it.data.snapshots || [];
+    if (snaps.length > 0) {
+      html = snaps.map((s, i) => {
+        const textHtml = esc(s.text || '').replace(/\n/g, '<br>');
+        let imgUrl = null;
+        if (q && q.stimulus && q.stimulus.galleries) {
+          const filename = s.src ? s.src.split('/').pop() : null;
+          if (filename) {
+            for (const gal of q.stimulus.galleries) {
+              const photo = gal.photos.find(p => p.name === filename);
+              if (photo) { imgUrl = photo.url; break; }
+            }
+          }
+        }
+        let imgHtml = '';
+        if (imgUrl) {
+          if (s.zoomRect) {
+            const zr = s.zoomRect;
+            const bgSize = `${100 / zr.width}% ${100 / zr.height}%`;
+            const bgPosX = `${(zr.offsetX / (1 - zr.width)) * 100 || 0}%`;
+            const bgPosY = `${(zr.offsetY / (1 - zr.height)) * 100 || 0}%`;
+            let aspect = 1;
+            if (s.width && s.height) {
+              aspect = (zr.width * s.width) / (zr.height * s.height);
+            }
+            imgHtml = `<div class="snap-crop" style="background-image:url(${imgUrl}); background-size:${bgSize}; background-position:${bgPosX} ${bgPosY}; aspect-ratio:${aspect};"></div>`;
+          } else {
+            imgHtml = `<img src="${imgUrl}" class="snap-crop" alt=""/>`;
+          }
+        }
+        return `<div class="snap-item">
+          ${imgHtml}
+          <div class="snap-text">
+            <div class="snap-label">תמונה ${i + 1}</div>
+            <p>${textHtml}</p>
+          </div>
+        </div>`;
+      }).join('');
+    } else {
+      html = '<div class="missing">לא צולמו תמונות ביישומון.</div>';
+    }
+    return `<div class="ans asset"><div class="ans-tag">${esc(tag)}</div><div class="ans-body">
+      <div style="margin-bottom:12px"><span class="chip">תשובת יישומון צילום</span></div>
+      ${html}
+    </div></div>`;
+  }
   return '';
 }
 function renderStudentPage(model) {
@@ -168,7 +252,7 @@ function renderStudentPage(model) {
       ${renderStimulus(q.stimulus)}
       ${q.promptHtml ? `<details class="prompt" open><summary>השאלה</summary><div class="prompt-body">${q.promptHtml}</div></details>` : ''}
       <div class="answers-head">תשובות התלמיד</div>
-      ${q.items.map(renderItem).join('')}
+      ${q.items.map(it => renderItem(it, q)).join('')}
     </section>`;
   }).join('');
   return `
