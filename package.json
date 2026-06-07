@@ -1,0 +1,11 @@
+{
+  "name": "open-teacher-assessment",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "terser app.src.js -o app.js -m -c"
+  },
+  "devDependencies": {
+    "terser": "^5.48.0"
+  }
+}

@@ -5,6 +5,9 @@ mockup-*.html
 node_modules/
 .vercel/
 
+# build output
+app.js
+
 # OS / editor
 .DS_Store
 *.log
