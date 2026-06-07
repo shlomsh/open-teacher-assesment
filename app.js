@@ -319,6 +319,203 @@ async function exportCsv() {
   a.click();
 }
 
+function buildPdfItemContent(it, q) {
+  if (it.type === 'inplace') {
+    return `<div class="ans-body">${it.answerHtml || esc(it.answerText)}</div>`;
+  }
+  if (it.type === 'cloze') {
+    return `<div class="ans-body"><span class="chip">${esc(it.selected)}</span></div>`;
+  }
+  if (it.type === 'asset') {
+    const snaps = it.data.snapshots || [];
+    if (!snaps.length) return `<div class="ans-body"><span class="chip">תשובת יישומון צילום</span><div class="missing">לא צולמו תמונות ביישומון.</div></div>`;
+    const html = snaps.map((s, i) => {
+      const textHtml = esc(s.text || '').replace(/\n/g, '<br>');
+      let imgUrl = null;
+      if (q && q.stimulus && q.stimulus.galleries) {
+        const filename = s.src ? s.src.split('/').pop() : null;
+        if (filename) {
+          const sortedGals = [...q.stimulus.galleries].sort((a, b) => {
+            const aInSrc = s.src && s.src.includes(a.name) ? 1 : 0;
+            const bInSrc = s.src && s.src.includes(b.name) ? 1 : 0;
+            if (aInSrc !== bInSrc) return bInSrc - aInSrc;
+            if (it.part && q.num != null) {
+              const re = new RegExp(`^PhotoGallery_Q0*${q.num}${it.part}$`, 'i');
+              const aPart = re.test(a.name) ? 1 : 0;
+              const bPart = re.test(b.name) ? 1 : 0;
+              if (aPart !== bPart) return bPart - aPart;
+            }
+            return 0;
+          });
+          for (const gal of sortedGals) {
+            const photo = gal.photos.find(p => p.name === filename);
+            if (photo) { imgUrl = photo.url; break; }
+          }
+        }
+      }
+      let imgHtml = '';
+      if (imgUrl) {
+        if (s.zoomRect) {
+          const zr = s.zoomRect;
+          const bgSize = `${100 / zr.width}% ${100 / zr.height}%`;
+          const bgPosX = `${(zr.offsetX / (1 - zr.width)) * 100 || 0}%`;
+          const bgPosY = `${(zr.offsetY / (1 - zr.height)) * 100 || 0}%`;
+          let aspect = 1;
+          if (s.width && s.height) { aspect = (zr.width * s.width) / (zr.height * s.height); }
+          imgHtml = `<div class="snap-crop" style="background-image:url(${imgUrl}); background-size:${bgSize}; background-position:${bgPosX} ${bgPosY}; aspect-ratio:${aspect};"></div>`;
+        } else {
+          imgHtml = `<img src="${imgUrl}" class="snap-crop" alt=""/>`;
+        }
+      }
+      return `<div class="snap-item">${imgHtml}<div class="snap-text"><div class="snap-label">תמונה ${i + 1}</div><p>${textHtml}</p></div></div>`;
+    }).join('');
+    return `<div class="ans-body"><div style="margin-bottom:8px"><span class="chip">תשובת יישומון צילום</span></div>${html}</div>`;
+  }
+  if (it.type === 'table') {
+    return `<div class="table-wrap"><table>
+      ${it.headers?.length ? `<thead><tr>${it.headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>` : ''}
+      <tbody>${it.rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>`;
+  }
+  return '';
+}
+
+function buildPdfQuestion(q) {
+  const title = (q.title || (q.num != null ? 'שאלה ' + q.num : 'שאלה')).replace(/^[\s–—-]+/, '');
+  const itemsHtml = q.items.map(it => {
+    const tag = it.part ? `${PART[it.part] || it.part}${it.slot ? `(${it.slot})` : ''}` : (it.slot ?? '');
+    const content = buildPdfItemContent(it, q);
+    const gradeHtml = it.grade !== '' ? `<div class="pdf-grade">${esc(String(it.grade))}</div>` : '';
+    const commentHtml = it.comment ? `<div class="pdf-comment">${esc(it.comment)}</div>` : '';
+    const hasGrading = gradeHtml || commentHtml;
+    return `<div class="pdf-item">
+      ${hasGrading ? `<div class="pdf-item-grades">${gradeHtml}${commentHtml}</div>` : ''}
+      <div class="pdf-item-main">${tag !== '' ? `<div class="ans-tag">${esc(String(tag))}</div>` : ''}${content}</div>
+    </div>`;
+  }).join('');
+  return `<section class="pdf-question">
+    <div class="q-head">
+      <h3><span class="qbadge">${esc(String(q.num ?? '✦'))}</span><span>${esc(title)}</span></h3>
+      ${renderStimulus(q.stimulus)}
+      ${q.promptHtml ? `<details class="prompt-wrap" open><summary>השאלה</summary><div class="prompt-body">${q.promptHtml}</div></details>` : ''}
+      <div class="answers-head">תשובות התלמיד</div>
+    </div>
+    ${itemsHtml}
+  </section>`;
+}
+
+function buildPrintDocument({ model, overall, overallComment, questionsHtml }) {
+  const m = model.meta || {};
+  const fontUrl = 'https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700;900&family=Assistant:wght@400;600;700&display=swap';
+  const overallHtml = (overall || overallComment) ? `
+    <div class="pdf-overall">
+      <div class="overall-circle">${esc(overall) || '—'}</div>
+      ${overallComment ? `<div class="overall-comment">${esc(overallComment)}</div>` : ''}
+    </div>` : '';
+  return `<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>תלמיד ${esc(model.id)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="${fontUrl}" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;}
+html{font-size:14px;}
+body{margin:0;padding:20mm 18mm;font-family:"Assistant","Segoe UI",system-ui,sans-serif;font-size:13px;line-height:1.7;color:#1a1810;direction:rtl;}
+h2,h3{font-family:"Frank Ruhl Libre",Georgia,serif;margin:0;}
+.pdf-header{background:#0d423d;color:#f6f1e6;border-radius:12px;padding:20px 24px;margin-bottom:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.pdf-header .kicker{font-size:11px;font-weight:800;letter-spacing:.12em;opacity:.7;text-transform:uppercase;margin-bottom:6px;}
+.pdf-header h2{font-size:22px;font-weight:900;margin-bottom:8px;}
+.pdf-header .meta{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:rgba(246,241,230,.8);}
+.pdf-header .meta b{color:#fff;}
+.pdf-header .answered{margin-top:10px;font-size:11px;color:rgba(246,241,230,.65);border-top:1px solid rgba(255,255,255,.15);padding-top:8px;}
+.pdf-overall{display:flex;gap:16px;align-items:flex-start;margin-bottom:18px;padding-bottom:14px;border-bottom:1px dashed #dbd0bc;}
+.overall-circle{width:58px;height:58px;border-radius:50%;border:2px solid #195cbb;display:grid;place-items:center;font-family:"Frank Ruhl Libre",serif;font-weight:700;font-size:22px;color:#195cbb;flex-shrink:0;}
+.overall-comment{font-size:13px;color:#195cbb;font-weight:600;padding-top:8px;line-height:1.5;}
+.pdf-question{margin-bottom:24px;}
+.pdf-question h3{display:flex;align-items:center;gap:10px;font-size:17px;color:#0d423d;margin-bottom:10px;}
+.qbadge{flex:0 0 auto;width:30px;height:30px;display:grid;place-items:center;border-radius:50%;background:#f4eee2;border:1.5px solid #a9772f;color:#a9772f;font-size:13px;font-weight:700;}
+.answers-head{font-size:10px;font-weight:800;color:#a9772f;letter-spacing:.2em;margin:8px 0 6px;border-bottom:1px solid #e7ddcc;padding-bottom:4px;text-transform:uppercase;}
+.prompt-wrap{background:#f4eee2;border:1px solid #e7ddcc;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12.5px;}
+.prompt-wrap summary{font-size:11px;font-weight:800;color:#155e57;letter-spacing:.08em;cursor:default;}
+.prompt-body{margin-top:6px;overflow-wrap:break-word;}
+.prompt-body table{width:100%;max-width:100%;border-collapse:collapse;font-size:12px;border:1px solid #ddd3c0;table-layout:fixed;}
+.prompt-body td,.prompt-body th{border:1px solid #ddd3c0;padding:5px 8px;vertical-align:middle;background:transparent;width:auto;overflow-wrap:break-word;word-break:break-word;}
+.prompt-body img{max-width:100%;height:auto;}
+.prompt-body *:empty:not(img):not(input):not(br):not(td):not(th):not(hr){display:none;}
+.prompt-body select{max-width:100%;width:100%;font-family:inherit;font-size:12px;border:1px solid #cfe3df;border-radius:6px;padding:2px 6px;background:#fff;color:#1a1810;appearance:auto;}
+.pdf-item{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #e7ddcc;}
+.pdf-item:last-child{border-bottom:none;}
+.pdf-item-main{flex:1;display:flex;gap:10px;min-width:0;}
+.pdf-item-grades{flex:0 0 80px;display:flex;flex-direction:column;gap:4px;padding-inline-end:10px;border-inline-end:1px dashed rgba(25,92,187,.3);}
+.ans-tag{flex:0 0 auto;min-width:26px;height:26px;padding:0 5px;display:grid;place-items:center;background:#e4efec;color:#0d423d;border:1px solid #cfe3df;border-radius:6px;font-family:"Frank Ruhl Libre",serif;font-weight:700;font-size:13px;align-self:flex-start;margin-top:2px;}
+.ans-tag:empty{display:none;}
+.ans-body{flex:1;font-size:13px;min-width:0;}
+.ans-body p{margin:0 0 4px;}
+.chip{background:#f3e9d6;border:1px solid #e7d4b0;border-radius:999px;padding:2px 10px;display:inline-block;font-weight:600;color:#7c5310;font-size:12px;}
+.pdf-grade{font-family:"Frank Ruhl Libre",serif;font-weight:700;font-size:15px;color:#195cbb;text-align:center;line-height:1.2;}
+.pdf-comment{font-size:11px;color:#195cbb;font-weight:500;line-height:1.4;}
+.missing{font-size:12px;color:#999;font-style:italic;}
+.stimulus{margin-bottom:10px;}
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px;}
+.thumb{display:block;padding:4px 4px 6px;background:#f4eee2;border:1px solid #dbd0bc;border-radius:4px;text-decoration:none;}
+.thumb img{max-height:160px;max-width:220px;width:auto;height:auto;display:block;}
+.snap-item{display:flex;gap:12px;margin-top:8px;align-items:flex-start;}
+.snap-crop{width:120px;height:85px;border-radius:6px;border:1px solid #dbd0bc;background-repeat:no-repeat;flex-shrink:0;background-color:#f4eee2;}
+.snap-crop img{width:100%;height:100%;object-fit:cover;border-radius:6px;}
+.snap-label{font-size:11px;font-weight:700;color:#a9772f;margin-bottom:2px;}
+.snap-text{flex:1;font-size:12.5px;line-height:1.5;}
+.snap-text p{margin:0;}
+.table-wrap{max-width:100%;}
+table{border-collapse:collapse;font-size:12px;width:auto;max-width:100%;}
+th,td{border:1px solid #dbd0bc;padding:5px 10px;text-align:start;vertical-align:top;min-width:60px;}
+th{background:#f4eee2;font-weight:700;}
+td:empty{background:#f9f7f3;color:#bbb;}
+@media print{
+  body{padding:15mm 14mm;}
+  .pdf-header{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .pdf-item{break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+<header class="pdf-header">
+  <div class="kicker">תיק בחינה</div>
+  <h2>תלמיד · ${esc(model.id)}</h2>
+  <div class="meta">
+    ${m.type ? `<span><b>סוג:</b> ${esc(m.type)}</span>` : ''}
+    ${m.term ? `<span><b>מועד:</b> ${esc(m.term)}</span>` : ''}
+    ${m.code ? `<span><b>סמל שאלון:</b> ${esc(m.code)}</span>` : ''}
+  </div>
+  <div class="answered">שאלות שנענו: ${model.answered.join(', ') || '—'}${model.answered.length > 0 ? ` (סה״כ ${model.answered.length})` : ''}</div>
+</header>
+${overallHtml}
+${questionsHtml}
+<script>if(document.readyState==='complete'){window.focus();window.print();}<\/script>
+</body>
+</html>`;
+}
+
+function exportStudentPdf(model) {
+  const grades = allGrades[model.id] || {};
+  const overall = grades.grade_overall || '';
+  const overallComment = grades.comment_overall || '';
+  const questionsHtml = model.questions.map(q => buildPdfQuestion(q)).join('');
+  const docHtml = buildPrintDocument({ model, overall, overallComment, questionsHtml });
+
+  const newWin = window.open('', '_blank');
+  if (!newWin) {
+    alert('הדפדפן חסם את פתיחת החלון. אנא אפשר חלונות קופצים לאתר זה ונסה שוב.');
+    return;
+  }
+  newWin.document.open();
+  newWin.document.write(docHtml);
+  newWin.document.close();
+  newWin.onload = () => { newWin.focus(); newWin.print(); };
+}
+
 // ---------- rendering (ported from build.mjs) ----------
 function renderStimulus(s) {
   if (!s) return '';
@@ -453,6 +650,9 @@ function renderStudentPage(model) {
         ${m.code ? `<span><b>סמל שאלון:</b> ${esc(m.code)}</span>` : ''}
       </div>
       <div class="answered">שאלות שנענו: ${model.answered.join(', ') || '—'} ${model.answered.length > 0 ? `<span style="opacity:0.75; font-size:0.9em; margin-inline-start:4px;">(סה״כ ${model.answered.length})</span>` : ''}</div>
+      <div class="exam-actions">
+        <button type="button" id="export-pdf-btn" class="export-pdf-btn">⬇ שמירה כ-PDF</button>
+      </div>
     </header>
     <section class="exam-grade">
       <label class="eg-grade">
@@ -751,6 +951,8 @@ async function showStudent(id) {
     const model = await buildModel(student);
     $app.innerHTML = renderStudentPage(model);
     document.querySelector('.backlink').onclick = (e) => { e.preventDefault(); location.hash = ''; };
+    const pdfBtn = document.getElementById('export-pdf-btn');
+    if (pdfBtn) pdfBtn.onclick = () => exportStudentPdf(model);
     
     // Bind grading inputs (integer-only; overall is the computed sum of sections)
     $app.querySelectorAll('.grade-input').forEach(inp => {
