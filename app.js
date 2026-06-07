@@ -178,7 +178,8 @@ function parseItemId(rawId) {
 function quickMeta(html) {
   const t = html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/\s+/g, ' ');
   const after = (label, re) => { const i = t.indexOf(label); if (i < 0) return ''; const m = t.slice(i + label.length).match(re); return m ? m[0].trim() : ''; };
-  return { type: after('סוג הבחינה', /\S[^:]*?(?=\s*מועד|\s*סמל|$)/), code: after('סמל השאלון', /\d{4,}/), term: after('מועד הבחינה', /[^:]+?\d{4}/) };
+  const strip = s => s.replace(/^[:\s]+/, '');
+  return { type: strip(after('סוג הבחינה', /\S[^:]*?(?=\s*מועד|\s*סמל|$)/)), code: after('סמל השאלון', /\d{4,}/), term: strip(after('מועד הבחינה', /[^:]+?\d{4}/)) };
 }
 
 function extractQuestions(doc) {
@@ -441,11 +442,11 @@ function renderStudentPage(model) {
     </section>`;
   }).join('');
   return `
-    <a class="backlink" href="#">→ חזרה לרשימת התלמידים</a>
+    <a class="backlink" href="#"><span>→</span><span>חזרה לרשימת התלמידים</span></a>
     <header class="exam">
       <div class="save-state" id="save-state" aria-live="polite"></div>
       <div class="label kicker">תיק בחינה</div>
-      <h2>תלמיד/ה · ${esc(model.id)}</h2>
+      <h2>תלמיד · ${esc(model.id)}</h2>
       <div class="meta">
         ${m.type ? `<span><b>סוג:</b> ${esc(m.type)}</span>` : ''}
         ${m.term ? `<span><b>מועד:</b> ${esc(m.term)}</span>` : ''}
@@ -518,7 +519,7 @@ function showWelcome(lastName, errMsg) {
       <div class="welcome">
         <div class="welcome-main">
           <h1 dir="ltr">Open Teacher <em>Assessment</em></h1>
-          <div class="hero-subtitle">מערכת פשוטה ומודרנית לצפייה בבחינות הדמייה מכל מקום.</div>
+          <div class="hero-subtitle">מערכת פשוטה ומודרנית לצפייה ובדיקת בחינות הדמייה מכל מקום.</div>
 
           <div class="cta-group">
             ${buttonsHtml}
@@ -531,17 +532,18 @@ function showWelcome(lastName, errMsg) {
             <details>
               <summary>📖 איך מתחילים?</summary>
               <ol>
-                <li>ודאו שאתם גולשים בדפדפן <strong>Chrome</strong> או <strong>Edge</strong>.</li>
-                <li>הכינו מראש את תיקיית הבחינות במחשב. אפשר לקבל אותה מאיש המחשבים בבית הספר או להוריד מ-iTest.</li>
-                <li>חשוב לוודא שזו תיקייה רגילה ולא קובץ מכווץ כמו Zip, ושבתוכה יש תיקייה נפרדת לכל תלמיד לפי מספר תעודת זהות.</li>
-                <li>לחצו על הכפתור למעלה ובחרו את התיקייה הזו.</li>
+                <li>גלשו בדפדפן <strong>Chrome</strong> או <strong>Edge</strong> בגרסה עדכנית.</li>
+                <li>הכינו מראש את תיקיית הבחינות במחשב – אפשר לקבל אותה מאיש המחשבים בבית הספר או להוריד מ-iTest.</li>
+                <li>ודאו שמדובר בתיקייה רגילה ולא בקובץ Zip, ושבתוכה יש תיקייה נפרדת לכל תלמיד עם שם שהוא מספר תעודת הזהות שלו.</li>
+                <li>בחרו תיקייה שמכילה את <strong>כלל התלמידים בכיתה</strong> – המערכת תציג מעקב אחר תהליך הבדיקה, ממוצע כולל ועוד.</li>
+                <li>לחצו על הכפתור הכחול למעלה ובחרו את התיקייה.</li>
               </ol>
             </details>
           </div>
           <div class="footer-col security">
             <details>
               <summary>🛡️ קוד פתוח ואבטחה</summary>
-              <p>פרויקט <strong>קוד פתוח</strong>. שום נתון אינו נשמר באפליקציה ושום מידע לא נשלח לאינטרנט. כל קובצי הבחינות והתשובות נשארים ונקראים <strong>אך ורק על המחשב האישי שלכם</strong> כחלק מבסיס האבטחה של המערכת.</p>
+              <p>פרויקט <strong>קוד פתוח</strong>. אין שרת, אין ענן – כל הנתונים נקראים ישירות מהמחשב שלכם <strong>ולא עוזבים אותו לרגע</strong>.</p>
               <p class="repo-link"><a href="https://github.com/shlomsh/open-teacher-assesment" target="_blank" rel="noopener">צפייה בקוד המקור ב-GitHub ↗</a></p>
             </details>
           </div>
@@ -605,7 +607,7 @@ function showNav() {
         <div class="summary-sep"></div>
         <div class="summary-item"><span class="val">${doneCount}/${students.length}</span><span class="lbl">הוערכו</span></div>
         <div class="summary-sep"></div>
-        <div class="summary-item"><span class="val">${esc(avgDisplay)}</span><span class="lbl">ממוצע (שהוערכו)</span></div>
+        <div class="summary-item"><span class="val">${esc(avgDisplay)}</span><span class="lbl">ממוצע ציונים</span></div>
         <div class="summary-sep"></div>
         <div class="summary-item">
           <span class="lbl">שאלון</span><span class="val">${esc(m.code || '—')}</span>
@@ -701,7 +703,7 @@ function showNav() {
   }
 
   $app.innerHTML = `
-    <a class="backlink" href="#welcome" id="home-link">→ חזרה למסך הראשי</a>
+    <a class="backlink" href="#welcome" id="home-link"><span>→</span><span>חזרה למסך הראשי</span></a>
     <div class="page-head">
       <h1 class="page-h">בחינות תלמידים</h1>
       ${summaryHtml}
