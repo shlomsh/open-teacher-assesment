@@ -583,6 +583,18 @@ function showNav() {
   $app.parentElement.classList.add('wrap--content');
   const statuses = students.map(s => gradingStatus(s.id));
   const doneCount = statuses.filter(st => st.state === 'done').length;
+
+  // Class average — over graded students only (those with an overall grade).
+  const gradedScores = statuses
+    .filter(st => st.state === 'done')
+    .map(st => parseFloat(st.grade))
+    .filter(g => !isNaN(g));
+  let avgDisplay = '—';
+  if (gradedScores.length) {
+    const avg = gradedScores.reduce((a, b) => a + b, 0) / gradedScores.length;
+    avgDisplay = Number.isInteger(avg) ? String(avg) : avg.toFixed(1);
+  }
+
   let summaryHtml = '';
   if (students.length > 0) {
     const m = students[0].meta;
@@ -592,6 +604,8 @@ function showNav() {
         <div class="summary-item"><span class="val">${students.length}</span><span class="lbl">תלמידים</span></div>
         <div class="summary-sep"></div>
         <div class="summary-item"><span class="val">${doneCount}/${students.length}</span><span class="lbl">הוערכו</span></div>
+        <div class="summary-sep"></div>
+        <div class="summary-item"><span class="val">${esc(avgDisplay)}</span><span class="lbl">ממוצע (שהוערכו)</span></div>
         <div class="summary-sep"></div>
         <div class="summary-item">
           <span class="lbl">שאלון</span><span class="val">${esc(m.code || '—')}</span>
@@ -604,29 +618,124 @@ function showNav() {
     }
   }
 
-  const cards = students.map((s, i) => {
-    const st = statuses[i];
-    const badge = st.state === 'done'
-      ? `<div class="card-status done">✓ הוערך · ${esc(st.grade)}</div>`
-      : st.state === 'progress'
-        ? `<div class="card-status progress"><span class="dot"></span>בתהליך</div>`
-        : `<div class="card-status none">טרם הוערך</div>`;
-    return `
-    <a class="card ${st.state}" href="#${encodeURIComponent(s.id)}">
-      <div class="sid">${esc(s.id)}</div>
-      ${badge}
-      <div class="go">צפייה ←</div>
-    </a>`;
-  }).join('');
-  
+  // Row model for the list. `n` is the original 1-based position (the "#" sort).
+  // `remark` is the teacher's overall per-test comment (comment_overall).
+  const rows = students.map((s, i) => ({
+    n: i + 1,
+    id: s.id,
+    state: statuses[i].state,
+    grade: statuses[i].state === 'done' ? (statuses[i].grade || '') : '',
+    remark: getStudentGradeData(s.id, 'comment_overall') || '',
+  }));
+
+  let sortKey = 'num';     // num | id | status | grade | remark
+  let sortDir = 'asc';     // asc | desc
+  let filterKey = 'all';   // all | done | progress | none
+
+  // Status sort groups in-progress first (resume work), then untouched, then done.
+  const statusOrder = { progress: 0, none: 1, done: 2 };
+  const gradeNum = (r) => (r.grade !== '' ? parseInt(r.grade, 10) : -Infinity);
+  const defaultDir = { num: 'asc', id: 'asc', status: 'asc', grade: 'desc', remark: 'asc' };
+
+  function baseCmp(x, y) {
+    switch (sortKey) {
+      case 'id': return Number(x.id) - Number(y.id);
+      case 'status': return statusOrder[x.state] - statusOrder[y.state];
+      case 'grade': return gradeNum(x) - gradeNum(y);
+      case 'remark':
+        if (!x.remark && !y.remark) return 0;
+        if (!x.remark) return 1;            // rows without a remark sink to the bottom
+        if (!y.remark) return -1;
+        return x.remark.localeCompare(y.remark, 'he');
+      default: return x.n - y.n;
+    }
+  }
+  function sortRows(arr) {
+    return arr.slice().sort((x, y) => {
+      const r = baseCmp(x, y) || (x.n - y.n);   // stable tiebreak on original order
+      return sortDir === 'asc' ? r : -r;
+    });
+  }
+
+  const COLS = [
+    { key: 'num',    label: '#' },
+    { key: 'id',     label: 'תעודת זהות' },
+    { key: 'status', label: 'סטטוס' },
+    { key: 'grade',  label: 'ציון' },
+    { key: 'remark', label: 'הערה כללית לתלמיד', cls: 'col-remark' },
+  ];
+  const headCell = (c) => {
+    const active = sortKey === c.key;
+    const ind = active ? (sortDir === 'asc' ? '▲' : '▼') : '↕';
+    return `<button type="button" class="col-head sortable${c.cls ? ' ' + c.cls : ''}${active ? ' sorted' : ''}"
+      data-sort="${c.key}" aria-label="מיון לפי ${esc(c.label)}">${esc(c.label)} <span class="sort-ind">${ind}</span></button>`;
+  };
+
+  const statusCell = (r) =>
+    r.state === 'done' ? `<span class="row-status done">הוערך</span>`
+    : r.state === 'progress' ? `<span class="row-status progress"><span class="dot"></span>בתהליך</span>`
+    : `<span class="row-status none">טרם הוערך</span>`;
+
+  function renderList() {
+    const listEl = document.getElementById('student-list');
+    if (!listEl) return;
+    if (!rows.length) {
+      listEl.innerHTML = `<div class="list-empty">לא נמצאו תיקיות תלמידים עם <code>standalone_open</code> בתיקייה שנבחרה.</div>`;
+      return;
+    }
+    const visible = sortRows(rows.filter(r => filterKey === 'all' || r.state === filterKey));
+    listEl.innerHTML = `
+      <div class="list-header list-grid">${COLS.map(headCell).join('')}</div>
+      ${visible.length
+        ? visible.map(r => `
+        <a class="student-row list-grid" href="#${encodeURIComponent(r.id)}">
+          <span class="row-num">${esc(String(r.n).padStart(2, '0'))}</span>
+          <span class="row-id">${esc(r.id)}</span>
+          ${statusCell(r)}
+          <span class="row-grade${r.grade === '' ? ' is-empty' : ''}">${r.grade === '' ? '—' : esc(r.grade)}</span>
+          ${r.remark
+            ? `<span class="row-remark" title="${esc(r.remark)}">${esc(r.remark)}</span>`
+            : `<span class="row-remark is-empty">—</span>`}
+        </a>`).join('')
+        : `<div class="list-empty">אין תלמידים בסטטוס זה.</div>`}`;
+  }
+
   $app.innerHTML = `
     <a class="backlink" href="#welcome" id="home-link">→ חזרה למסך הראשי</a>
     <div class="page-head">
       <h1 class="page-h">בחינות תלמידים</h1>
       ${summaryHtml}
     </div>
-    <div class="grid-header" style="font-size:13px; font-weight:700; color:var(--faint); margin:0 0 12px; letter-spacing:.05em;">בחירת תלמיד להערכה</div>
-    <div class="grid">${cards || '<div class="empty">לא נמצאו תיקיות תלמידים עם <code>standalone_open</code> בתיקייה שנבחרה.</div>'}</div>`;
+    ${rows.length ? `
+    <div class="toolbar">
+      <div class="filter-wrap">
+        <label class="toolbar-label" for="status-filter">סינון לפי סטטוס</label>
+        <select id="status-filter" class="filter-select">
+          <option value="all">הכל</option>
+          <option value="done">הוערכו</option>
+          <option value="progress">בתהליך</option>
+          <option value="none">טרם הוערכו</option>
+        </select>
+      </div>
+    </div>` : ''}
+    <div class="student-list" id="student-list"></div>`;
+
+  renderList();
+
+  if (rows.length) {
+    const listEl = document.getElementById('student-list');
+    // Header sorting (delegated, so it survives renderList rebuilding the header).
+    listEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.col-head.sortable');
+      if (!btn || !listEl.contains(btn)) return;
+      const key = btn.dataset.sort;
+      if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      else { sortKey = key; sortDir = defaultDir[key]; }
+      renderList();
+    });
+    const sel = document.getElementById('status-filter');
+    if (sel) sel.onchange = () => { filterKey = sel.value; renderList(); };
+  }
 }
 
 async function showStudent(id) {
