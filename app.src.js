@@ -737,6 +737,7 @@ function showWelcome(lastName, errMsg) {
                 <li>ודאו שמדובר בתיקייה רגילה ולא בקובץ Zip, ושבתוכה יש תיקייה נפרדת לכל תלמיד עם שם שהוא מספר תעודת הזהות שלו.</li>
                 <li>בחרו תיקייה שמכילה את <strong>כלל התלמידים בכיתה</strong> – המערכת תציג מעקב אחר תהליך הבדיקה, ממוצע כולל ועוד.</li>
                 <li>לחצו על הכפתור הכחול למעלה ובחרו את התיקייה.</li>
+                <li><a href="https://youtube.com/watch?v=mhr91sxjvnQ&si=h7iWePzWc2UWaXA4" target="_blank" rel="noopener">סרטון הדרכה לשימוש באפליקציה ↗</a></li>
               </ol>
             </details>
           </div>
