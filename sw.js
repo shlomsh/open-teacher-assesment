@@ -8,11 +8,11 @@ const PRECACHE = [
   '/og-image.webp',
 ];
 
-// Install: precache core assets
+// Install: precache core assets (allSettled so one failure won't abort install)
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE)
-      .then(cache => cache.addAll(PRECACHE))
+      .then(cache => Promise.allSettled(PRECACHE.map(url => cache.add(url))))
       .then(() => self.skipWaiting())
   );
 });
