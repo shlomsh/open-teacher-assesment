@@ -1,4 +1,4 @@
-const CACHE = 'ota-v1';
+const CACHE = 'ota-v2';
 
 const PRECACHE = [
   '/',
