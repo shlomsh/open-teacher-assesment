@@ -745,6 +745,7 @@ function showWelcome(lastName, errMsg) {
             <details>
               <summary>🛡️ קוד פתוח ואבטחה</summary>
               <p>פרויקט <strong>קוד פתוח</strong>. אין שרת, אין ענן – כל הנתונים נקראים ישירות מהמחשב שלכם <strong>ולא עוזבים אותו לרגע</strong>.</p>
+              <p class="rakefet-credit">נבנה בהשראתה של רקפת ממקיף גוונים שהיא ההשראה שלי<img src="rakefet.png" alt="רקפת" width="24" height="24" style="display:inline-block;vertical-align:middle;margin-right:4px;"></p>
               <p class="repo-link"><a href="https://github.com/shlomsh/open-teacher-assesment" target="_blank" rel="noopener">צפייה בקוד המקור ב-GitHub ↗</a></p>
             </details>
           </div>
