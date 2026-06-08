@@ -28,6 +28,7 @@ app's code is hosted.
 3. All students appear — click one for its questions, images, and answers.
 4. Next time: **"פתיחת התיקייה האחרונה"** reopens the same folder; **"רענון"** re-scans
    it after you add more student folders.
+5. [סרטון הדרכה לשימוש באפליקציה](https://youtube.com/watch?v=mhr91sxjvnQ&si=h7iWePzWc2UWaXA4)
 
 Requires Chrome or Edge (the folder-picker API isn't in Safari/Firefox).
 
