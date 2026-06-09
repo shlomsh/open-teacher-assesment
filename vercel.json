@@ -6,6 +6,9 @@
   "regions": ["cdg1"],
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    { "source": "/((?!_vercel/).*)", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

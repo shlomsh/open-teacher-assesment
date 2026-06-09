@@ -1053,9 +1053,20 @@ async function resumeFolder() {
   } catch (e) { showWelcome(null, e.message); }
 }
 
+// Sync a clean virtual pathname for analytics (landing / list / exam) without
+// touching the hash router. replaceState keeps the history stack intact (back
+// button unaffected); Vercel Web Analytics picks up the path change as a
+// pageview. The student id stays in the hash and is never put in the path.
+function trackView(path) {
+  if (location.pathname !== path) {
+    history.replaceState(history.state, '', path + location.hash);
+  }
+}
+
 async function route() {
   const id = decodeURIComponent(location.hash.replace(/^#/, ''));
   if (id === 'welcome' || (!rootHandle && !id)) {
+    trackView('/');
     const lastName = await loadHandle().then(h => h ? h.name : null).catch(() => null);
     showWelcome(lastName);
     return;
@@ -1063,8 +1074,10 @@ async function route() {
   if (!rootHandle) return;
 
   if (id) {
-    showStudent(id); 
+    trackView('/exam');
+    showStudent(id);
   } else {
+    trackView('/students');
     // Rescan when returning to the student list to pick up newly pasted folders
     if (document.querySelector('.page-head')) {
        // already on nav, but doing a refresh?
