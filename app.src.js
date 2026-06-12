@@ -1139,4 +1139,7 @@ function hideLightbox() {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') hideLightbox();
+  // Ctrl+U opens browser View Source on Windows/Chrome, disrupting an active grading
+  // session. Block it at the page level so the teacher stays on their work.
+  if (e.ctrlKey && (e.key === 'u' || e.key === 'U')) e.preventDefault();
 });
