@@ -1139,7 +1139,13 @@ function hideLightbox() {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') hideLightbox();
-  // Ctrl+U opens browser View Source on Windows/Chrome, disrupting an active grading
-  // session. Block it at the page level so the teacher stays on their work.
-  if (e.ctrlKey && (e.key === 'u' || e.key === 'U')) e.preventDefault();
+  // Ctrl+U is a readline shortcut that Chrome applies to <textarea> and <input>
+  // elements — it silently deletes from the cursor back to the start of the line.
+  // Because the app auto-saves on every input event, this can permanently erase a
+  // teacher's comment. Swallow it when a text field is focused; let the browser
+  // handle it normally everywhere else (View Source, etc.).
+  if (e.ctrlKey && (e.key === 'u' || e.key === 'U')) {
+    const tag = document.activeElement?.tagName;
+    if (tag === 'TEXTAREA' || tag === 'INPUT') e.preventDefault();
+  }
 });
