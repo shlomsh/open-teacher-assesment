@@ -490,8 +490,9 @@ table{border-collapse:collapse;font-size:12px;width:auto;max-width:100%;}
 th,td{border:1px solid #dbd0bc;padding:5px 10px;text-align:start;vertical-align:top;min-width:60px;}
 th{background:#f4eee2;font-weight:700;}
 td:empty{background:#f9f7f3;color:#bbb;}
+@page{margin:15mm 14mm;}
 @media print{
-  body{padding:15mm 14mm;}
+  body{padding:0;}
   .pdf-header{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .pdf-item{break-inside:avoid;}
 }
@@ -519,6 +520,13 @@ function exportStudentPdf(model) {
   const grades = allGrades[model.id] || {};
   const overall = grades.grade_overall || '';
   const overallComment = grades.comment_overall || '';
+  // The model is cached and its per-item grade/comment are snapshotted at first
+  // build, so they miss any edits made this session. Re-sync from the live store
+  // (same source as overall above) before rendering, or the PDF drops them.
+  model.questions.forEach(q => q.items.forEach(it => {
+    it.grade = grades[`grade_${it.key}`] || '';
+    it.comment = grades[`comment_${it.key}`] || '';
+  }));
   const questionsHtml = model.questions.map(q => buildPdfQuestion(q)).join('');
   const docHtml = buildPrintDocument({ model, overall, overallComment, questionsHtml });
 
@@ -548,7 +556,7 @@ function renderSubGrading(it) {
   return `
     <div class="teacher-pen" title="הערכת מורה">
       <div class="pen-grade">
-        <input type="text" class="grade-input" data-itemkey="${esc(it.key)}" inputmode="numeric" value="${esc(it.grade)}" placeholder="ציון" />
+        <input type="text" class="grade-input" data-itemkey="${esc(it.key)}" inputmode="numeric" maxlength="3" value="${esc(it.grade)}" placeholder="ציון" />
       </div>
       <div class="pen-comment">
         <textarea class="comment-input" data-itemkey="${esc(it.key)}" placeholder="הערה...">${esc(it.comment)}</textarea>
@@ -978,7 +986,7 @@ async function showStudent(id) {
       if (inp.dataset.itemkey === 'overall') return; // read-only, computed
       inp.oninput = (e) => {
         const itemkey = e.target.dataset.itemkey;
-        const clean = e.target.value.replace(/[^\d]/g, '');
+        const clean = e.target.value.replace(/[^\d]/g, '').slice(0, 3);
         if (clean !== e.target.value) {
           const pos = e.target.selectionStart - (e.target.value.length - clean.length);
           e.target.value = clean;

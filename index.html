@@ -225,12 +225,13 @@
                 background:transparent; color:#195cbb; font-family:var(--display); font-weight:700;
                 font-size:27px; text-align:center; padding:0; transition:box-shadow .15s; }
   .exam-grade .grade-input:focus { outline:none; box-shadow:0 0 0 3px rgba(25,92,187,.16); }
-  .exam-grade .comment-input { width:100%; min-height:54px; resize:vertical; background:transparent; border:none;
+  .exam-grade .comment-input { width:100%; min-height:74px; resize:vertical; background:transparent; border:none;
                 border-bottom:1px dashed rgba(25,92,187,.3); color:#195cbb; font-weight:600;
                 font-family:inherit; font-size:14px; line-height:1.5; padding:4px; transition:background .15s; }
-  .exam-grade .comment-input:focus { outline:none; background:rgba(25,92,187,.06); border-radius:6px 6px 0 0; }
+  .exam-grade .comment-input:hover { background:rgba(25,92,187,.08); }
+  .exam-grade .comment-input:focus { outline:none; background:rgba(25,92,187,.12); border-radius:6px 6px 0 0; }
   .exam-grade .grade-input::placeholder, .exam-grade .comment-input::placeholder { color:rgba(25,92,187,.4); font-weight:500; }
-  @media (max-width:560px) { .exam-grade { gap:16px; } .exam-grade .grade-input { width:60px; height:60px; font-size:22px; } }
+  @media (max-width:560px) { .exam-grade { gap:16px; } .exam-grade .grade-input { width:60px; height:60px; font-size:22px; } .exam-grade .comment-input { min-height:60px; } }
 
   /* save-state indicator (quiet, top corner of the student banner) */
   .save-state { position:absolute; top:18px; inset-inline-end:24px; z-index:2;
@@ -263,7 +264,7 @@
   .q-total { grid-column:note; margin-top:24px; margin-bottom:24px; margin-inline:auto;
              display:flex; justify-content:center; align-items:center; position:relative;
              width:50px; height:50px; border-radius:50%; border:2px solid #195cbb;
-             background:transparent; color:#195cbb; opacity:0.55; }
+             background:transparent; color:#195cbb; opacity:1; }
   .q-total::after { content:"ציון לשאלה"; position:absolute; top:calc(100% + 4px); right:50%; transform:translateX(50%);
                     font-family:var(--body); font-size:11.5px; font-weight:700; white-space:nowrap; letter-spacing:0.02em; }
   .q-total[hidden] { display:none; }
@@ -283,7 +284,12 @@
                  color:#195cbb; font-weight:700; font-family:inherit; resize:none; transition:background .15s; }
   .teacher-pen input:focus, .teacher-pen textarea:focus { outline:none; background:rgba(25,92,187,.07); border-radius:5px; }
   .teacher-pen input::placeholder, .teacher-pen textarea::placeholder { color:rgba(25,92,187,.42); font-weight:500; }
-  .pen-grade input { font-size:20px; text-align:center; padding:3px 4px; border-bottom:1px dashed rgba(25,92,187,.35); }
+  .pen-grade input { width:54px; font-family:var(--display); font-size:20px; line-height:1; font-weight:700;
+                     text-align:center; padding:6px 6px; border:none; border-radius:8px;
+                     background:transparent; transition:background .15s; }
+  .pen-grade input:hover, .pen-comment textarea:hover { background:rgba(25,92,187,.08); }
+  .teacher-pen .pen-grade input:focus, .teacher-pen .pen-comment textarea:focus { background:rgba(25,92,187,.12); }
+  .pen-grade input::placeholder { font-family:var(--body); font-size:12.5px; font-weight:600; }
   .pen-comment textarea { font-size:12.5px; min-height:54px; line-height:1.4; padding:4px; border-bottom:1px dashed rgba(25,92,187,.26); }
 
   @media (max-width:680px) {
