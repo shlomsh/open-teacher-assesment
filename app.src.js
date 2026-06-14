@@ -382,6 +382,15 @@ function buildPdfItemContent(it, q) {
 
 function buildPdfQuestion(q) {
   const title = (q.title || (q.num != null ? 'שאלה ' + q.num : 'שאלה')).replace(/^[\s–—-]+/, '');
+  // Per-question total: sum of the question's sub-section grades, mirroring the
+  // read-only .q-total shown in the live exam page (recomputeQuestionTotals).
+  let qSum = 0, qAny = false;
+  q.items.forEach(it => {
+    if (it.grade !== '' && it.grade != null) { qSum += parseInt(it.grade, 10) || 0; qAny = true; }
+  });
+  const totalHtml = qAny
+    ? `<div class="pdf-q-total"><span class="pdf-q-total-val">${qSum}</span><span class="pdf-q-total-lbl">ציון לשאלה</span></div>`
+    : '';
   const itemsHtml = q.items.map(it => {
     const tag = it.part ? `${PART[it.part] || it.part}${it.slot ? `(${it.slot})` : ''}` : (it.slot ?? '');
     const content = buildPdfItemContent(it, q);
@@ -395,7 +404,10 @@ function buildPdfQuestion(q) {
   }).join('');
   return `<section class="pdf-question">
     <div class="q-head">
-      <h3><span class="qbadge">${esc(String(q.num ?? '✦'))}</span><span>${esc(title)}</span></h3>
+      <div class="q-title-row">
+        <h3><span class="qbadge">${esc(String(q.num ?? '✦'))}</span><span>${esc(title)}</span></h3>
+        ${totalHtml}
+      </div>
       ${renderStimulus(q.stimulus)}
       ${q.promptHtml ? `<details class="prompt-wrap" open><summary>השאלה</summary><div class="prompt-body">${q.promptHtml}</div></details>` : ''}
       <div class="answers-head">תשובות התלמיד</div>
@@ -436,6 +448,11 @@ h2,h3{font-family:"Frank Ruhl Libre",Georgia,serif;margin:0;}
 .overall-comment{font-size:13px;color:#195cbb;font-weight:600;padding-top:8px;line-height:1.5;}
 .pdf-question{margin-bottom:24px;}
 .pdf-question h3{display:flex;align-items:center;gap:10px;font-size:17px;color:#0d423d;margin-bottom:10px;}
+.q-title-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:10px;}
+.q-title-row h3{margin-bottom:0;flex:1;min-width:0;}
+.pdf-q-total{flex:0 0 auto;display:flex;align-items:center;gap:8px;}
+.pdf-q-total-val{width:46px;height:46px;border-radius:50%;border:2px solid #195cbb;display:grid;place-items:center;font-family:"Frank Ruhl Libre",serif;font-weight:700;font-size:18px;color:#195cbb;}
+.pdf-q-total-lbl{font-size:10px;font-weight:800;color:#195cbb;letter-spacing:.08em;white-space:nowrap;text-transform:uppercase;}
 .qbadge{flex:0 0 auto;width:30px;height:30px;display:grid;place-items:center;border-radius:50%;background:#f4eee2;border:1.5px solid #a9772f;color:#a9772f;font-size:13px;font-weight:700;}
 .answers-head{font-size:10px;font-weight:800;color:#a9772f;letter-spacing:.2em;margin:8px 0 6px;border-bottom:1px solid #e7ddcc;padding-bottom:4px;text-transform:uppercase;}
 .prompt-wrap{background:#f4eee2;border:1px solid #e7ddcc;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12.5px;}
