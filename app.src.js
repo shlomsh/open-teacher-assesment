@@ -1116,9 +1116,22 @@ window.addEventListener('hashchange', route);
 
 (async function init() {
   if (!window.showDirectoryPicker) { showWelcome(null, 'דרוש דפדפן Chrome או Edge (תמיכה בבחירת תיקייה מקומית).'); return; }
-  let last = null;
-  try { const h = await loadHandle(); if (h) last = h.name; } catch {}
-  showWelcome(last);
+  let h = null;
+  try { h = await loadHandle(); } catch {}
+  // If we still hold permission from a previous visit (persistent grant / PWA),
+  // silently restore the folder and route to the current path + hash so a
+  // refresh stays on the same view. requestPermission needs a user gesture, so
+  // when the grant has lapsed we fall back to the welcome screen's resume button.
+  if (h) {
+    try {
+      if (await h.queryPermission({ mode: 'readwrite' }) === 'granted') {
+        rootHandle = h;
+        route();
+        return;
+      }
+    } catch {}
+  }
+  showWelcome(h ? h.name : null);
 })();
 
 // ---------- Lightbox ----------
