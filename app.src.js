@@ -766,6 +766,9 @@ function showWelcome(lastName, errMsg) {
               </ol>
             </details>
           </div>
+          <div class="footer-col credit">
+            <p>Built with ❤️ by <a href="https://github.com/shlomsh" target="_blank" rel="noopener">Shlomi Shemesh</a></p>
+          </div>
           <div class="footer-col security">
             <details>
               <summary>🛡️ קוד פתוח ואבטחה</summary>
